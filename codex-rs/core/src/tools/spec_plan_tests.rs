@@ -1296,6 +1296,56 @@ async fn multi_agent_feature_selects_one_agent_tool_family() {
 }
 
 #[tokio::test]
+async fn workflow_tools_use_private_legacy_primitives_with_multi_agent_v2() {
+    let plan = probe(|turn| {
+        set_features(
+            turn,
+            &[Feature::Collab, Feature::CodeMode, Feature::MultiAgentV2],
+        );
+    })
+    .await;
+
+    plan.assert_visible_contains(&[
+        "run_workflow",
+        "wait_workflow",
+        codex_code_mode::PUBLIC_TOOL_NAME,
+    ]);
+    plan.assert_visible_lacks(&[MULTI_AGENT_V1_NAMESPACE]);
+    for tool_name in ["spawn_agent", "wait_agent", "close_agent"] {
+        let name = ToolName::namespaced(MULTI_AGENT_V1_NAMESPACE, tool_name).to_string();
+        plan.assert_registered_contains(&[&name]);
+        assert_eq!(plan.exposure(&name), ToolExposure::Hidden);
+    }
+    let ToolSpec::Freeform(exec) = plan.visible_spec(codex_code_mode::PUBLIC_TOOL_NAME) else {
+        panic!("expected code mode exec tool");
+    };
+    assert!(!exec.description.contains(MULTI_AGENT_V1_NAMESPACE));
+}
+
+#[tokio::test]
+async fn dynamic_tools_preserve_workflow_name_collisions() {
+    let plan = probe_with(
+        |turn| set_features(turn, &[Feature::Collab, Feature::MultiAgentV2]),
+        ToolPlanInputs {
+            dynamic_tools: vec![dynamic_tool(
+                None,
+                "run_workflow",
+                /*defer_loading*/ false,
+            )],
+            ..Default::default()
+        },
+    )
+    .await;
+
+    plan.assert_visible_contains(&["run_workflow"]);
+    plan.assert_visible_lacks(&["wait_workflow"]);
+    let ToolSpec::Function(tool) = plan.visible_spec("run_workflow") else {
+        panic!("expected dynamic run_workflow function")
+    };
+    assert_eq!(tool.description, "run_workflow dynamic tool");
+}
+
+#[tokio::test]
 async fn multi_agent_v2_message_schemas_are_encrypted() {
     let plan = probe(|turn| {
         set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
@@ -1490,6 +1540,8 @@ async fn code_mode_only_can_expose_namespaced_multi_agent_v2_as_normal_tools() {
             "wait",
             "request_user_input",
             "agents",
+            "run_workflow",
+            "wait_workflow",
             // Hosted Responses tool.
             "web_search",
         ]
@@ -1610,6 +1662,8 @@ async fn hosted_web_search_and_standalone_image_generation_follow_runtime_gates(
             "request_user_input",
             // Multi-agent v2 tools.
             MULTI_AGENT_V2_NAMESPACE,
+            "run_workflow",
+            "wait_workflow",
             // Hosted Responses tools.
             "web_search",
         ]

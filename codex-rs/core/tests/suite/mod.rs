@@ -142,4 +142,5 @@ mod websocket_fallback;
 mod window_headers;
 #[cfg(target_os = "windows")]
 mod windows_sandbox;
+mod workflow;
 mod workspace_roots;

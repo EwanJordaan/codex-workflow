@@ -2,7 +2,7 @@ mod delegate;
 mod execute_handler;
 pub(crate) mod execute_spec;
 mod response_adapter;
-mod wait_handler;
+pub(crate) mod wait_handler;
 pub(crate) mod wait_spec;
 
 use std::sync::Arc;
@@ -31,12 +31,10 @@ use crate::tools::ToolRouter;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolPayload;
-use crate::tools::effective_tool_mode;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolCall;
 use crate::tools::router::ToolCallSource;
 use crate::unified_exec::resolve_max_tokens;
-use codex_protocol::openai_models::ToolMode;
 use codex_tools::ToolName;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::formatted_truncate_text_content_items_with_policy;
@@ -123,8 +121,12 @@ impl CodeModeService {
         }
     }
 
-    pub(crate) fn mark_cell_ready_for_dispatch(&self, cell_id: &codex_code_mode::CellId) {
-        self.dispatch_broker.mark_cell_ready_for_dispatch(cell_id);
+    pub(crate) fn bind_cell_dispatch(
+        &self,
+        cell_id: &codex_code_mode::CellId,
+        turn_id: &str,
+    ) -> Result<(), String> {
+        self.dispatch_broker.bind_cell_to_turn(cell_id, turn_id)
     }
 
     pub(crate) fn finish_cell_dispatch(&self, cell_id: &CellId) {
@@ -137,21 +139,14 @@ impl CodeModeService {
         step_context: Arc<StepContext>,
         router: Arc<ToolRouter>,
         tracker: SharedTurnDiffTracker,
-    ) -> Option<CodeModeDispatchWorker> {
+    ) -> CodeModeDispatchWorker {
         let turn = &step_context.turn;
-        let tool_mode = effective_tool_mode(turn);
-        if !matches!(tool_mode, ToolMode::CodeMode | ToolMode::CodeModeOnly) {
-            return None;
-        }
-
         let exec = ExecContext {
             session: Arc::clone(session),
             turn: Arc::clone(turn),
         };
-        Some(
-            self.dispatch_broker
-                .start_turn_worker(exec, router, step_context, tracker),
-        )
+        self.dispatch_broker
+            .start_turn_worker(exec, router, step_context, tracker)
     }
 
     async fn session(&self) -> Result<Arc<dyn CodeModeSession>, String> {
@@ -176,6 +171,74 @@ impl CodeModeService {
             .await
             .map(Arc::clone)
     }
+}
+
+pub(crate) async fn execute_code_cell(
+    session: Arc<Session>,
+    turn: Arc<TurnContext>,
+    call_id: String,
+    source: String,
+    enabled_tools: Vec<codex_code_mode::ToolDefinition>,
+    yield_time_ms: Option<u64>,
+    max_output_tokens: Option<usize>,
+) -> Result<FunctionToolOutput, FunctionCallError> {
+    let exec = ExecContext { session, turn };
+    let started_at = std::time::Instant::now();
+    let started_cell = exec
+        .session
+        .services
+        .code_mode_service
+        .execute(codex_code_mode::ExecuteRequest {
+            tool_call_id: call_id.clone(),
+            enabled_tools,
+            source: source.clone(),
+            yield_time_ms,
+            max_output_tokens,
+        })
+        .await
+        .map_err(FunctionCallError::RespondToModel)?;
+    let cell_id = started_cell.cell_id.clone();
+    let runtime_cell_id = cell_id.to_string();
+    let code_cell_trace = exec
+        .session
+        .services
+        .rollout_thread_trace
+        .start_code_cell_trace(
+            exec.turn.sub_id.as_str(),
+            runtime_cell_id.as_str(),
+            call_id.as_str(),
+            source.as_str(),
+        );
+    if let Err(err) = exec
+        .session
+        .services
+        .code_mode_service
+        .bind_cell_dispatch(&cell_id, exec.turn.sub_id.as_str())
+    {
+        let _ = exec
+            .session
+            .services
+            .code_mode_service
+            .terminate(cell_id)
+            .await;
+        return Err(FunctionCallError::RespondToModel(err));
+    }
+    let response = started_cell
+        .initial_response()
+        .await
+        .map_err(FunctionCallError::RespondToModel)?;
+    code_cell_trace.record_initial_response(&response);
+    if !matches!(response, codex_code_mode::RuntimeResponse::Yielded { .. }) {
+        code_cell_trace.record_ended(&response);
+        exec.session
+            .services
+            .code_mode_service
+            .finish_cell_dispatch(&cell_id);
+    }
+    exec.session.services.elicitations.wait_until_clear().await;
+    handle_runtime_response(&exec, response, max_output_tokens, started_at)
+        .await
+        .map_err(FunctionCallError::RespondToModel)
 }
 
 pub(super) async fn handle_runtime_response(

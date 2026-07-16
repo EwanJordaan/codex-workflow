@@ -42,6 +42,7 @@ use crate::tools::handlers::multi_agents::WaitAgentHandler;
 use crate::tools::handlers::multi_agents_common::DEFAULT_WAIT_TIMEOUT_MS;
 use crate::tools::handlers::multi_agents_common::MAX_WAIT_TIMEOUT_MS;
 use crate::tools::handlers::multi_agents_common::MIN_WAIT_TIMEOUT_MS;
+use crate::tools::handlers::multi_agents_spec::MULTI_AGENT_V1_NAMESPACE;
 use crate::tools::handlers::multi_agents_spec::SpawnAgentToolOptions;
 use crate::tools::handlers::multi_agents_spec::WaitAgentTimeoutOptions;
 use crate::tools::handlers::multi_agents_v2::FollowupTaskHandler as FollowupTaskHandlerV2;
@@ -59,6 +60,8 @@ use crate::tools::registry::ToolRegistry;
 use crate::tools::registry::override_tool_exposure;
 use crate::tools::router::ToolRouter;
 use crate::tools::router::ToolRouterParams;
+use crate::tools::workflow::RunWorkflowHandler;
+use crate::tools::workflow::WaitWorkflowHandler;
 use codex_features::Feature;
 use codex_login::AuthManager;
 use codex_mcp::ToolInfo;
@@ -841,6 +844,51 @@ fn add_collaboration_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mu
             planned_tools
                 .add_with_exposure(WaitAgentHandler::new(context.wait_agent_timeouts), exposure);
             planned_tools.add_with_exposure(CloseAgentHandler, exposure);
+        }
+
+        let workflow_tool_name_conflicts = context.dynamic_tools.iter().any(|spec| match spec {
+            DynamicToolSpec::Function(tool) => {
+                matches!(tool.name.as_str(), "run_workflow" | "wait_workflow")
+            }
+            DynamicToolSpec::Namespace(namespace) => {
+                namespace.name == MULTI_AGENT_V1_NAMESPACE
+                    && namespace.tools.iter().any(|tool| {
+                        let DynamicToolNamespaceTool::Function(tool) = tool;
+                        matches!(
+                            tool.name.as_str(),
+                            "spawn_agent" | "wait_agent" | "close_agent"
+                        )
+                    })
+            }
+        });
+        if !workflow_tool_name_conflicts {
+            let agent_type_description =
+                agent_type_description(turn_context, context.default_agent_type_description);
+            let workflow_spawn = SpawnAgentHandler::new(SpawnAgentToolOptions {
+                available_models: turn_context.available_models.clone(),
+                agent_type_description,
+                hide_agent_type_model_reasoning: false,
+                expose_spawn_agent_model_overrides: true,
+                multi_agent_version: turn_context.multi_agent_version,
+                usage_hint_text: turn_context.config.multi_agent_v2.usage_hint_text.clone(),
+            });
+            let workflow_wait = WaitAgentHandler::new(context.wait_agent_timeouts);
+            let workflow_close = CloseAgentHandler;
+            let nested_tool_specs = vec![
+                workflow_spawn.spec(),
+                workflow_wait.spec(),
+                workflow_close.spec(),
+            ];
+            if multi_agent_v2_enabled(turn_context) {
+                planned_tools.add_dispatch_only(workflow_spawn);
+                planned_tools.add_dispatch_only(workflow_wait);
+                planned_tools.add_dispatch_only(workflow_close);
+            }
+            planned_tools.add_with_exposure(
+                RunWorkflowHandler::new(nested_tool_specs),
+                ToolExposure::DirectModelOnly,
+            );
+            planned_tools.add_with_exposure(WaitWorkflowHandler, ToolExposure::DirectModelOnly);
         }
     }
 

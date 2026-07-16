@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Workflows"
+  short_description: "Create and run scripted multi-agent workflows"
+  default_prompt: "Use $codex-workflows to create and run a reusable multi-agent workflow."

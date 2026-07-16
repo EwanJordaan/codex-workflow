@@ -61,6 +61,10 @@ Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your 
 
 You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
 
+### Build this fork with GitHub Actions
+
+From PowerShell, run `./scripts/trigger-github-build.ps1`. It starts the **Build source** workflow and uploads the Linux `codex` release binary as an artifact. Pass `-Ref <git-ref>` to build a branch or tag.
+
 ## Docs
 
 - [**Codex Documentation**](https://developers.openai.com/codex)
