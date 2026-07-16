@@ -27,23 +27,7 @@ jobs:
           ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
-      - name: Restore Cargo build cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            codex-rs/target
-          key: build-source-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}
-          restore-keys: build-source-${{ runner.os }}-
-      - name: Test changed Rust packages
-        run: cargo test --locked -p codex-code-mode -p codex-core
       - name: Build release binary
         run: cargo build --locked --release -p codex-cli
-      - name: Upload Codex CLI
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: codex-linux-x86_64
-          path: codex-rs/target/release/codex
-          if-no-files-found: error
+      - name: Test changed Rust packages
+        run: cargo test --locked -p codex-code-mode -p codex-core
