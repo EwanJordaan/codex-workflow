@@ -27,7 +27,8 @@ jobs:
           ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
-      - name: Build release binary
-        run: cargo build --locked --release -p codex-cli
       - name: Test changed Rust packages
         run: cargo test --locked -p codex-code-mode -p codex-core
+      - name: Build release binary
+        if: ${{ inputs.ref == 'main' }}
+        run: cargo build --locked --release -p codex-cli
