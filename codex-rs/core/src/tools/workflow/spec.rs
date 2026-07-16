@@ -43,9 +43,8 @@ pub(super) fn create_run_workflow_tool() -> ToolSpec {
         name: RUN_WORKFLOW_TOOL_NAME.to_string(),
         description: concat!(
             "Launch a reusable multi-agent workflow from a JavaScript-compatible TypeScript ",
-            "file under `.codex/workflows/`. Use the `$codex-workflows` skill to create or ",
-            "modify workflow files. If this call yields a cell ID, call `wait_workflow` until ",
-            "the run completes."
+            "file under `.codex/workflows/`. If this call yields a cell ID, call ",
+            "`wait_workflow` until the run completes."
         )
         .to_string(),
         strict: false,
