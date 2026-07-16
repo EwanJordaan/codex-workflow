@@ -20,11 +20,6 @@ use super::wait_spec::create_wait_tool;
 
 pub struct CodeModeWaitHandler;
 
-pub(crate) enum WaitOutputLimit {
-    CodeModeDefault,
-    AtMost(usize),
-}
-
 #[derive(Debug, Deserialize)]
 struct ExecWaitArgs {
     cell_id: String,
@@ -68,85 +63,74 @@ impl CodeModeWaitHandler {
         &self,
         invocation: ToolInvocation,
     ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
-        handle_wait_call(invocation, WAIT_TOOL_NAME, WaitOutputLimit::CodeModeDefault).await
-    }
-}
+        let ToolInvocation {
+            session,
+            turn,
+            tool_name,
+            payload,
+            ..
+        } = invocation;
 
-pub(crate) async fn handle_wait_call(
-    invocation: ToolInvocation,
-    expected_tool_name: &str,
-    output_limit: WaitOutputLimit,
-) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
-    let ToolInvocation {
-        session,
-        turn,
-        tool_name,
-        payload,
-        ..
-    } = invocation;
-
-    let ToolPayload::Function { arguments } = payload else {
-        return Err(FunctionCallError::RespondToModel(format!(
-            "{expected_tool_name} expects JSON arguments"
-        )));
-    };
-    if tool_name.namespace.is_some() || tool_name.name != expected_tool_name {
-        return Err(FunctionCallError::RespondToModel(format!(
-            "{expected_tool_name} expects JSON arguments"
-        )));
+        match payload {
+            ToolPayload::Function { arguments }
+                if tool_name.namespace.is_none() && tool_name.name.as_str() == WAIT_TOOL_NAME =>
+            {
+                let args: ExecWaitArgs = parse_arguments(&arguments)?;
+                let exec = ExecContext { session, turn };
+                let started_at = std::time::Instant::now();
+                let cell_id = codex_code_mode::CellId::new(args.cell_id);
+                let wait_response = if args.terminate {
+                    exec.session
+                        .services
+                        .code_mode_service
+                        .terminate(cell_id)
+                        .await
+                } else {
+                    exec.session
+                        .services
+                        .code_mode_service
+                        .wait(codex_code_mode::WaitRequest {
+                            cell_id,
+                            yield_time_ms: args.yield_time_ms,
+                        })
+                        .await
+                }
+                .map_err(FunctionCallError::RespondToModel)?;
+                if let codex_code_mode::WaitOutcome::LiveCell(response) = &wait_response
+                    && !matches!(response, codex_code_mode::RuntimeResponse::Yielded { .. })
+                {
+                    // Only a live-cell wait can close a CodeCell. A missing
+                    // cell is still an ordinary `wait` tool result, but there
+                    // is no runtime object for the reducer to complete.
+                    let runtime_cell_id = match response {
+                        codex_code_mode::RuntimeResponse::Yielded { cell_id, .. }
+                        | codex_code_mode::RuntimeResponse::Terminated { cell_id, .. }
+                        | codex_code_mode::RuntimeResponse::Result { cell_id, .. } => cell_id,
+                    };
+                    exec.session
+                        .services
+                        .rollout_thread_trace
+                        .code_cell_trace_context(
+                            exec.turn.sub_id.as_str(),
+                            runtime_cell_id.as_str(),
+                        )
+                        .record_ended(response);
+                    exec.session
+                        .services
+                        .code_mode_service
+                        .finish_cell_dispatch(runtime_cell_id);
+                }
+                exec.session.services.elicitations.wait_until_clear().await;
+                handle_runtime_response(&exec, wait_response.into(), args.max_tokens, started_at)
+                    .await
+                    .map(boxed_tool_output)
+                    .map_err(FunctionCallError::RespondToModel)
+            }
+            _ => Err(FunctionCallError::RespondToModel(format!(
+                "{WAIT_TOOL_NAME} expects JSON arguments"
+            ))),
+        }
     }
-
-    let args: ExecWaitArgs = parse_arguments(&arguments)?;
-    if let WaitOutputLimit::AtMost(limit) = output_limit
-        && args.max_tokens.is_some_and(|max_tokens| max_tokens > limit)
-    {
-        return Err(FunctionCallError::RespondToModel(format!(
-            "{expected_tool_name} max_tokens cannot exceed {limit}"
-        )));
-    }
-    let exec = ExecContext { session, turn };
-    let started_at = std::time::Instant::now();
-    let cell_id = codex_code_mode::CellId::new(args.cell_id);
-    let wait_response = if args.terminate {
-        exec.session
-            .services
-            .code_mode_service
-            .terminate(cell_id)
-            .await
-    } else {
-        exec.session
-            .services
-            .code_mode_service
-            .wait(codex_code_mode::WaitRequest {
-                cell_id,
-                yield_time_ms: args.yield_time_ms,
-            })
-            .await
-    }
-    .map_err(FunctionCallError::RespondToModel)?;
-    if let codex_code_mode::WaitOutcome::LiveCell(response) = &wait_response
-        && !matches!(response, codex_code_mode::RuntimeResponse::Yielded { .. })
-    {
-        let runtime_cell_id = match response {
-            codex_code_mode::RuntimeResponse::Yielded { cell_id, .. }
-            | codex_code_mode::RuntimeResponse::Terminated { cell_id, .. }
-            | codex_code_mode::RuntimeResponse::Result { cell_id, .. } => cell_id,
-        };
-        exec.session
-            .services
-            .rollout_thread_trace
-            .code_cell_trace_context(exec.turn.sub_id.as_str(), runtime_cell_id.as_str())
-            .record_ended(response);
-        exec.session
-            .services
-            .code_mode_service
-            .finish_cell_dispatch(runtime_cell_id);
-    }
-    exec.session.services.elicitations.wait_until_clear().await;
-    handle_runtime_response(&exec, wait_response.into(), args.max_tokens, started_at)
-        .await
-        .map(boxed_tool_output)
-        .map_err(FunctionCallError::RespondToModel)
 }
 
 impl CoreToolRuntime for CodeModeWaitHandler {

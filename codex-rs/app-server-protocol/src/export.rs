@@ -45,6 +45,7 @@ const IGNORED_DEFINITIONS: &[&str] = &["Option<()>"];
 const JSON_V1_ALLOWLIST: &[&str] = &["InitializeParams", "InitializeResponse"];
 const EXPERIMENTAL_CLIENT_METHOD_DEPENDENCY_TYPES: &[&str] = &[
     "EnvironmentShellInfo",
+    "EnvironmentStatusKind",
     "PathUri",
     "RemoteControlClient",
     "RemoteControlClientsListOrder",
@@ -59,7 +60,8 @@ const SPECIAL_DEFINITIONS: &[&str] = &[
 const FLAT_V2_SHARED_DEFINITIONS: &[&str] = &["ClientRequest", "ServerNotification"];
 const V1_CLIENT_REQUEST_METHODS: &[&str] =
     &["getConversationSummary", "gitDiffToRemote", "getAuthStatus"];
-const EXCLUDED_SERVER_NOTIFICATION_METHODS_FOR_JSON: &[&str] = &["rawResponseItem/completed"];
+const EXCLUDED_SERVER_NOTIFICATION_METHODS_FOR_JSON: &[&str] =
+    &["rawResponseItem/completed", "rawResponse/completed"];
 
 #[derive(Clone)]
 pub struct GeneratedSchema {

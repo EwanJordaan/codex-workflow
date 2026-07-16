@@ -203,8 +203,6 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
         "request_user_input",
         "apply_patch",
         "view_image",
-        "run_workflow",
-        "wait_workflow",
         "tool_search",
         "web_search",
     ]);

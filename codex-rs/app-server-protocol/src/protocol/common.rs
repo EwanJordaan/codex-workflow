@@ -735,6 +735,11 @@ client_request_definitions! {
         serialization: global("config"),
         response: v2::PluginShareDeleteResponse,
     },
+    AppsRead => "app/read" {
+        params: v2::AppsReadParams,
+        serialization: None,
+        response: v2::AppsReadResponse,
+    },
     AppsList => "app/list" {
         params: v2::AppsListParams,
         serialization: None,
@@ -955,6 +960,13 @@ client_request_definitions! {
         params: v2::EnvironmentInfoParams,
         serialization: global_shared_read("environment"),
         response: v2::EnvironmentInfoResponse,
+    },
+    #[experimental("environment/status")]
+    /// Reads the current status of a configured execution environment.
+    EnvironmentStatus => "environment/status" {
+        params: v2::EnvironmentStatusParams,
+        serialization: global_shared_read("environment"),
+        response: v2::EnvironmentStatusResponse,
     },
 
     McpServerOauthLogin => "mcpServer/oauth/login" {
@@ -1623,6 +1635,10 @@ server_notification_definitions! {
     ThreadNameUpdated => "thread/name/updated" (v2::ThreadNameUpdatedNotification),
     ThreadGoalUpdated => "thread/goal/updated" (v2::ThreadGoalUpdatedNotification),
     ThreadGoalCleared => "thread/goal/cleared" (v2::ThreadGoalClearedNotification),
+    #[experimental("thread/environment/connected")]
+    EnvironmentConnected => "thread/environment/connected" (v2::EnvironmentConnectionNotification),
+    #[experimental("thread/environment/disconnected")]
+    EnvironmentDisconnected => "thread/environment/disconnected" (v2::EnvironmentConnectionNotification),
     #[experimental("thread/settings/updated")]
     ThreadSettingsUpdated => "thread/settings/updated" (v2::ThreadSettingsUpdatedNotification),
     ThreadTokenUsageUpdated => "thread/tokenUsage/updated" (v2::ThreadTokenUsageUpdatedNotification),
@@ -1638,6 +1654,8 @@ server_notification_definitions! {
     ItemCompleted => "item/completed" (v2::ItemCompletedNotification),
     /// This event is internal-only. Used by Codex Cloud.
     RawResponseItemCompleted => "rawResponseItem/completed" (v2::RawResponseItemCompletedNotification),
+    /// This event is internal-only. Used by clients that need exact upstream usage.
+    RawResponseCompleted => "rawResponse/completed" (v2::RawResponseCompletedNotification),
     AgentMessageDelta => "item/agentMessage/delta" (v2::AgentMessageDeltaNotification),
     /// EXPERIMENTAL - proposed plan streaming deltas for plan items.
     PlanDelta => "item/plan/delta" (v2::PlanDeltaNotification),
@@ -3091,6 +3109,26 @@ mod tests {
     }
 
     #[test]
+    fn serialize_read_apps() -> Result<()> {
+        let request = ClientRequest::AppsRead {
+            request_id: RequestId::Integer(9),
+            params: v2::AppsReadParams {
+                app_ids: vec!["app-a".to_string(), "app-b".to_string()],
+                include_tools: true,
+            },
+        };
+        assert_eq!(
+            json!({
+                "method": "app/read",
+                "id": 9,
+                "params": { "appIds": ["app-a", "app-b"], "includeTools": true }
+            }),
+            serde_json::to_value(&request)?,
+        );
+        Ok(())
+    }
+
+    #[test]
     fn serialize_environment_add() -> Result<()> {
         let request = ClientRequest::EnvironmentAdd {
             request_id: RequestId::Integer(9),
@@ -3291,7 +3329,7 @@ mod tests {
                 prompt: Some(Some("You are on a call".to_string())),
                 realtime_session_id: Some("sess_456".to_string()),
                 transport: None,
-                version: Some(RealtimeConversationVersion::V1),
+                version: Some(RealtimeConversationVersion::V3),
                 voice: Some(RealtimeVoice::Marin),
             },
         };
@@ -3312,7 +3350,7 @@ mod tests {
                     "prompt": "You are on a call",
                     "realtimeSessionId": "sess_456",
                     "transport": null,
-                    "version": "v1",
+                    "version": "v3",
                     "voice": "marin"
                 }
             }),
