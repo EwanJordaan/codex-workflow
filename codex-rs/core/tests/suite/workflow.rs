@@ -48,7 +48,7 @@ return { received: args };
     )
     .await;
 
-    let followup = mount_sse_once_match(
+    let list_call = mount_sse_once_match(
         &server,
         |request: &wiremock::Request| {
             body_contains(request, "workflow-call")
@@ -57,8 +57,23 @@ return { received: args };
         },
         sse(vec![
             ev_response_created("parent-2"),
-            ev_assistant_message("parent-message", "workflow complete"),
+            ev_function_call("workflow-list", "list_workflows", "{}"),
             ev_completed("parent-2"),
+        ]),
+    )
+    .await;
+
+    let followup = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            body_contains(request, "workflow-list")
+                && body_contains(request, "workflow-1")
+                && body_contains(request, "completed")
+        },
+        sse(vec![
+            ev_response_created("parent-3"),
+            ev_assistant_message("parent-message", "workflow complete"),
+            ev_completed("parent-3"),
         ]),
     )
     .await;
@@ -87,6 +102,7 @@ return { received: args };
     .await
     .expect("parent workflow follow-up should arrive");
 
+    assert_eq!(list_call.requests().len(), 1);
     assert_eq!(followup.requests().len(), 1);
     Ok(())
 }

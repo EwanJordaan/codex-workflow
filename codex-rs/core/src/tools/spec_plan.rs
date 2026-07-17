@@ -58,6 +58,10 @@ use crate::tools::registry::ToolRegistry;
 use crate::tools::registry::override_tool_exposure;
 use crate::tools::router::ToolRouter;
 use crate::tools::router::ToolRouterParams;
+use crate::tools::workflow::ControlWorkflowHandler;
+use crate::tools::workflow::ListWorkflowsHandler;
+use crate::tools::workflow::RunWorkflowHandler;
+use crate::tools::workflow::WaitWorkflowHandler;
 use codex_features::Feature;
 use codex_login::AuthManager;
 use codex_protocol::config_types::WebSearchMode;
@@ -190,10 +194,27 @@ fn build_tool_specs_and_registry(
     };
     let mut planned_tools = PlannedTools::default();
     add_tool_sources(&context, &mut planned_tools);
+    append_workflow_executors(turn_context, &mut planned_tools);
     apply_direct_model_only_namespace_overrides(turn_context, &mut planned_tools);
     append_tool_search_executor(&context, &mut planned_tools);
     prepend_code_mode_executors(&context, &mut planned_tools);
     build_model_visible_specs_and_registry(turn_context, planned_tools)
+}
+
+fn append_workflow_executors(turn_context: &TurnContext, planned_tools: &mut PlannedTools) {
+    if !collab_tools_enabled(turn_context) {
+        return;
+    }
+    let nested_tool_specs = planned_tools
+        .runtimes()
+        .iter()
+        .filter(|runtime| runtime.exposure() != ToolExposure::Hidden)
+        .map(|runtime| runtime.spec())
+        .collect();
+    planned_tools.add(RunWorkflowHandler::new(nested_tool_specs));
+    planned_tools.add(WaitWorkflowHandler);
+    planned_tools.add(ListWorkflowsHandler);
+    planned_tools.add(ControlWorkflowHandler);
 }
 
 fn apply_direct_model_only_namespace_overrides(

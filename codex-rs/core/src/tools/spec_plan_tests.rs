@@ -1403,6 +1403,27 @@ async fn v1_multi_agent_tools_defer_when_tool_search_available() {
 }
 
 #[tokio::test]
+async fn workflows_are_visible_when_collaboration_is_enabled() {
+    let plan = probe(|turn| {
+        set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
+    })
+    .await;
+
+    plan.assert_visible_contains(&[
+        "run_workflow",
+        "wait_workflow",
+        "list_workflows",
+        "control_workflow",
+    ]);
+    plan.assert_registered_contains(&[
+        "run_workflow",
+        "wait_workflow",
+        "list_workflows",
+        "control_workflow",
+    ]);
+}
+
+#[tokio::test]
 async fn multi_agent_v2_can_use_configured_tool_namespace() {
     let namespaced = probe(|turn| {
         set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);

@@ -4,11 +4,19 @@ use codex_tools::JsonSchema;
 use codex_tools::ResponsesApiTool;
 use codex_tools::ToolSpec;
 
+use super::CONTROL_WORKFLOW_TOOL_NAME;
+use super::LIST_WORKFLOWS_TOOL_NAME;
 use super::RUN_WORKFLOW_TOOL_NAME;
 use super::WAIT_WORKFLOW_TOOL_NAME;
 
 pub(super) fn create_run_workflow_tool() -> ToolSpec {
     let properties = BTreeMap::from([
+        (
+            "name".to_string(),
+            JsonSchema::string(Some(
+                "Optional display name for this managed workflow run.".to_string(),
+            )),
+        ),
         (
             "path".to_string(),
             JsonSchema::string(Some(
@@ -57,9 +65,44 @@ pub(super) fn create_run_workflow_tool() -> ToolSpec {
         )
         .to_string(),
         strict: false,
+        parameters: JsonSchema::object(properties, None, Some(false.into())),
+        output_schema: None,
+        defer_loading: None,
+    })
+}
+
+pub(super) fn create_list_workflows_tool() -> ToolSpec {
+    ToolSpec::Function(ResponsesApiTool {
+        name: LIST_WORKFLOWS_TOOL_NAME.to_string(),
+        description: "List managed workflow runs in this session and their lifecycle status."
+            .to_string(),
+        strict: false,
+        parameters: JsonSchema::object(BTreeMap::new(), Some(Vec::new()), Some(false.into())),
+        output_schema: None,
+        defer_loading: None,
+    })
+}
+
+pub(super) fn create_control_workflow_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "run_id".to_string(),
+            JsonSchema::string(Some("Managed workflow run identifier.".to_string())),
+        ),
+        (
+            "action".to_string(),
+            JsonSchema::string(Some(
+                "Lifecycle action. Currently supports terminate.".to_string(),
+            )),
+        ),
+    ]);
+    ToolSpec::Function(ResponsesApiTool {
+        name: CONTROL_WORKFLOW_TOOL_NAME.to_string(),
+        description: "Control a managed workflow run.".to_string(),
+        strict: false,
         parameters: JsonSchema::object(
             properties,
-            None,
+            Some(vec!["run_id".to_string(), "action".to_string()]),
             Some(false.into()),
         ),
         output_schema: None,

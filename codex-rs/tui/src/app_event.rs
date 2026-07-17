@@ -392,6 +392,9 @@ pub(crate) enum AppEvent {
         path: PathBuf,
     },
 
+    /// Inspect managed workflow runs selected from the `/workflows` picker.
+    InspectWorkflowRuns,
+
     /// Open the app link view in the bottom pane.
     OpenAppLink {
         app_id: String,

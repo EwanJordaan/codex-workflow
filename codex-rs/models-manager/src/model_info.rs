@@ -57,6 +57,8 @@ Launch a workflow with `run_workflow`, passing exactly one of `source` for an ep
 
 If `run_workflow` yields a cell ID, call `wait_workflow` until it completes; do not busy-poll. `wait_workflow` can terminate a cell, but this does not guarantee cancellation of subagents already started. Inspect live agents afterward.
 
+Workflow launches are registered as managed runs. Use `list_workflows` to inspect their run IDs and lifecycle status, and `control_workflow` with action `terminate` to stop a running workflow. When the user invokes `/workflows` to inspect runs, prefer these managed tools over guessing from conversation history.
+
 Treat workflow files as code: review them before launching because their agents inherit the current session's capabilities and can edit the workspace.
 "#;
 
