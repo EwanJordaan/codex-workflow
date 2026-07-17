@@ -27,7 +27,7 @@ const WORKFLOW_INSTRUCTIONS: &str = r#"
 
 Use a workflow for repeatable multi-agent work: bounded fan-out, branching, loops, or independent verification. Use ordinary subagent calls for one or two simple delegations.
 
-Create workflow files in `.codex/workflows/<name>.ts` or `.js`. They must be valid JavaScript or TypeScript. Begin each file with metadata, then use the workflow helpers at top level:
+For a one-off workflow, pass JavaScript-compatible source directly to `run_workflow`. Save repeatable workflows in `.codex/workflows/<name>.ts` or `.js`; users can discover and run them with `/workflows`. Begin each workflow with metadata, then use the workflow helpers at top level:
 
 ```ts
 export const meta = {
@@ -53,7 +53,7 @@ return agent(`Rank these findings:\n${JSON.stringify(reviews)}`, {
 
 Keep orchestration in the workflow; have agents perform filesystem access, shell commands, web access, and edits. Bound every loop. Pipeline concurrency must be an integer from 1 through 4, and a workflow may spawn at most 64 agents.
 
-Launch a workflow with `run_workflow`, passing a workspace-relative `.ts` or `.js` path beneath `.codex/workflows/` and optional structured `args`. A workflow file must be at most 128 KiB and cannot use imports, direct filesystem, shell, network, or mid-run user input.
+Launch a workflow with `run_workflow`, passing exactly one of `source` for an ephemeral workflow or a workspace-relative `.ts` or `.js` `path` beneath `.codex/workflows/`, plus optional structured `args`. Workflow source must be at most 128 KiB and cannot use imports, direct filesystem, shell, network, or mid-run user input.
 
 If `run_workflow` yields a cell ID, call `wait_workflow` until it completes; do not busy-poll. `wait_workflow` can terminate a cell, but this does not guarantee cancellation of subagents already started. Inspect live agents afterward.
 

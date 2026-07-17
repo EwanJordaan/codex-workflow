@@ -8,6 +8,18 @@ use serde_json::Value;
 
 const MAX_WORKFLOW_BYTES: u64 = 128 * 1024;
 
+pub(super) fn compile_inline_workflow(
+    source: &str,
+    args: Option<&Value>,
+) -> Result<String, String> {
+    if source.len() as u64 > MAX_WORKFLOW_BYTES {
+        return Err(format!(
+            "workflow source exceeds the {MAX_WORKFLOW_BYTES}-byte limit"
+        ));
+    }
+    codex_code_mode::compile_workflow_source(source, args)
+}
+
 pub(super) async fn load_and_compile_workflow(
     file_system: &dyn ExecutorFileSystem,
     cwd: &PathUri,

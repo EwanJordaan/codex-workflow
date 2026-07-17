@@ -1,0 +1,11 @@
+---
+source: tui/src/chatwidget/workflows_tests.rs
+expression: "render_bottom_popup(&chat, /*width*/ 80)"
+---
+  Saved workflows
+  Select a workflow to run it in this session.
+
+› 1. audit   .codex/workflows/audit.ts
+  2. review  .codex/workflows/review.js
+
+  Press enter to confirm or esc to go back

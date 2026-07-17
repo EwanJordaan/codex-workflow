@@ -421,6 +421,9 @@ impl ChatWidget {
             SlashCommand::Skills => {
                 self.open_skills_menu();
             }
+            SlashCommand::Workflows => {
+                self.open_workflows_menu();
+            }
             SlashCommand::Import => {
                 self.app_event_tx
                     .send(AppEvent::OpenExternalAgentConfigMigration);
@@ -667,6 +670,9 @@ impl ChatWidget {
         } = prepared;
         let trimmed = args.trim();
         match cmd {
+            SlashCommand::Workflows => {
+                self.run_saved_workflow_by_name(trimmed);
+            }
             SlashCommand::Usage => {
                 if self.ensure_usage_command_available() {
                     match tokens::TokenActivityView::parse(trimmed) {
@@ -1051,6 +1057,7 @@ impl ChatWidget {
             | SlashCommand::Mcp
             | SlashCommand::Apps
             | SlashCommand::Plugins
+            | SlashCommand::Workflows
             | SlashCommand::Rollout
             | SlashCommand::Copy
             | SlashCommand::Raw

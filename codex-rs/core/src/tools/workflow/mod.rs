@@ -16,6 +16,7 @@ use crate::tools::context::boxed_tool_output;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 
+use self::source::compile_inline_workflow;
 use self::source::load_and_compile_workflow;
 use self::spec::create_run_workflow_tool;
 use self::spec::create_wait_workflow_tool;
@@ -37,7 +38,8 @@ impl RunWorkflowHandler {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RunWorkflowArgs {
-    path: String,
+    path: Option<String>,
+    source: Option<String>,
     args: Option<Value>,
     yield_time_ms: Option<u64>,
     max_output_tokens: Option<usize>,
@@ -95,14 +97,23 @@ impl ToolExecutor<ToolInvocation> for RunWorkflowHandler {
             let file_system = environment.environment.get_filesystem();
             let sandbox =
                 turn.file_system_sandbox_context(/*additional_permissions*/ None, cwd);
-            let source = load_and_compile_workflow(
-                file_system.as_ref(),
-                cwd,
-                &args.path,
-                args.args.as_ref(),
-                Some(&sandbox),
-            )
-            .await
+            let source = match (&args.path, &args.source) {
+                (Some(path), None) => load_and_compile_workflow(
+                    file_system.as_ref(),
+                    cwd,
+                    path,
+                    args.args.as_ref(),
+                    Some(&sandbox),
+                )
+                .await,
+                (None, Some(source)) => compile_inline_workflow(source, args.args.as_ref()),
+                (Some(_), Some(_)) => Err(
+                    "run_workflow accepts exactly one of `path` or `source`, not both".to_string(),
+                ),
+                (None, None) => Err(
+                    "run_workflow requires exactly one of `path` or `source`".to_string(),
+                ),
+            }
             .map_err(FunctionCallError::RespondToModel)?;
             let enabled_tools =
                 codex_tools::collect_code_mode_tool_definitions(&self.nested_tool_specs);

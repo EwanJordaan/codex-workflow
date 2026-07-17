@@ -12,7 +12,15 @@ pub(super) fn create_run_workflow_tool() -> ToolSpec {
         (
             "path".to_string(),
             JsonSchema::string(Some(
-                "Project-relative .ts or .js file below .codex/workflows/.".to_string(),
+                "Project-relative .ts or .js file below .codex/workflows/. Mutually exclusive with source."
+                    .to_string(),
+            )),
+        ),
+        (
+            "source".to_string(),
+            JsonSchema::string(Some(
+                "Ephemeral JavaScript-compatible workflow source. Mutually exclusive with path."
+                    .to_string(),
             )),
         ),
         (
@@ -42,15 +50,16 @@ pub(super) fn create_run_workflow_tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: RUN_WORKFLOW_TOOL_NAME.to_string(),
         description: concat!(
-            "Launch a reusable multi-agent workflow from a JavaScript-compatible TypeScript ",
-            "file under `.codex/workflows/`. If this call yields a cell ID, call ",
+            "Launch a reusable multi-agent workflow from either a JavaScript-compatible ",
+            "TypeScript file under `.codex/workflows/` or ephemeral source. Provide exactly ",
+            "one of `path` or `source`. If this call yields a cell ID, call ",
             "`wait_workflow` until the run completes."
         )
         .to_string(),
         strict: false,
         parameters: JsonSchema::object(
             properties,
-            Some(vec!["path".to_string()]),
+            None,
             Some(false.into()),
         ),
         output_schema: None,

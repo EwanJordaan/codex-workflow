@@ -10,6 +10,7 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::tempdir;
 
+use super::source::compile_inline_workflow;
 use super::source::load_and_compile_workflow;
 use codex_code_mode::compile_workflow_source;
 
@@ -22,6 +23,15 @@ export const meta = {
 await Promise.resolve();
 return { received: args };
 "#;
+
+#[test]
+fn inline_workflow_enforces_size_limit() {
+    assert!(compile_inline_workflow(SIMPLE_WORKFLOW, None).is_ok());
+    assert_eq!(
+        compile_inline_workflow(&"x".repeat(128 * 1024 + 1), None),
+        Err("workflow source exceeds the 131072-byte limit".to_string())
+    );
+}
 
 #[tokio::test]
 async fn loader_restricts_files_to_workflow_directory() {

@@ -26,6 +26,7 @@ pub enum SlashCommand {
     AutoReview,
     Memories,
     Skills,
+    Workflows,
     Import,
     Hooks,
     Review,
@@ -100,6 +101,7 @@ impl SlashCommand {
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Mention => "mention a file",
             SlashCommand::Skills => "use skills to improve how Codex performs specific tasks",
+            SlashCommand::Workflows => "view and run saved workflows",
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Status => "show current session configuration and token usage",
@@ -162,6 +164,7 @@ impl SlashCommand {
                 | SlashCommand::Mcp
                 | SlashCommand::Raw
                 | SlashCommand::Usage
+                | SlashCommand::Workflows
                 | SlashCommand::Pets
                 | SlashCommand::Side
                 | SlashCommand::Btw
@@ -216,6 +219,7 @@ impl SlashCommand {
             | SlashCommand::Rename
             | SlashCommand::Mention
             | SlashCommand::Skills
+            | SlashCommand::Workflows
             | SlashCommand::Hooks
             | SlashCommand::Status
             | SlashCommand::Usage
@@ -277,6 +281,16 @@ mod tests {
     #[test]
     fn clean_alias_parses_to_stop_command() {
         assert_eq!(SlashCommand::from_str("clean"), Ok(SlashCommand::Stop));
+    }
+
+    #[test]
+    fn workflows_command_accepts_a_saved_workflow_name() {
+        assert_eq!(
+            SlashCommand::from_str("workflows"),
+            Ok(SlashCommand::Workflows)
+        );
+        assert!(SlashCommand::Workflows.supports_inline_args());
+        assert!(SlashCommand::Workflows.available_during_task());
     }
 
     #[test]
