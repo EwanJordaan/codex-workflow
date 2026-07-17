@@ -93,13 +93,14 @@ impl ToolExecutor<ToolInvocation> for RunWorkflowHandler {
             let session = std::sync::Arc::clone(&invocation.session);
             let turn = std::sync::Arc::clone(&invocation.turn);
             let call_id = invocation.call_id.clone();
-            if !turn.environments.starting.is_empty() {
+            if turn.environments.starting().next().is_some() {
                 return Err(FunctionCallError::RespondToModel(
                     "run_workflow cannot start while a turn environment is still starting"
                         .to_string(),
                 ));
             }
-            let [environment] = turn.environments.turn_environments.as_slice() else {
+            let environments = turn.environments.turn_environments().collect::<Vec<_>>();
+            let [environment] = environments.as_slice() else {
                 return Err(FunctionCallError::RespondToModel(
                     "run_workflow requires exactly one turn environment".to_string(),
                 ));
