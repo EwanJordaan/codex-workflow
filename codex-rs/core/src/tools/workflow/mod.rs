@@ -108,7 +108,7 @@ impl ToolExecutor<ToolInvocation> for RunWorkflowHandler {
             let cwd = environment.cwd();
             let file_system = environment.environment.get_filesystem();
             let sandbox =
-                turn.file_system_sandbox_context(/*additional_permissions*/ None, cwd);
+                turn.file_system_sandbox_context(/*additional_permissions*/ None, environment);
             let workflow_name = args.name.clone().unwrap_or_else(|| {
                 args.path
                     .as_deref()
