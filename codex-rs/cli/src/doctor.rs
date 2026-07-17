@@ -3257,7 +3257,7 @@ mod tests {
             "/var/tmp",
         ]);
         let arg0_paths = Arg0DispatchPaths {
-            codex_self_exe: Some(PathBuf::from("/bin/codex")),
+            codex_self_exe: Some(PathBuf::from("/bin/codexw")),
             codex_linux_sandbox_exe: Some(PathBuf::from("/bin/codex-linux-sandbox")),
             main_execve_wrapper_exe: Some(PathBuf::from("/bin/codex-execve-wrapper")),
         };

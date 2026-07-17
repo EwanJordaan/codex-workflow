@@ -28,7 +28,7 @@ fn host_program_override_takes_precedence() {
     assert_eq!(
         resolve_host_program(
             Some("custom-code-mode-host".into()),
-            Ok(PathBuf::from("/opt/codex/bin/codex")),
+            Ok(PathBuf::from("/opt/codex/bin/codexw")),
         ),
         PathBuf::from("custom-code-mode-host")
     );
@@ -45,7 +45,7 @@ fn host_program_is_next_to_the_main_executable_even_when_missing() {
     assert_eq!(
         resolve_host_program(
             /*override_path*/ None,
-            Ok(PathBuf::from("/opt/codex/bin/codex")),
+            Ok(PathBuf::from("/opt/codex/bin/codexw")),
         ),
         PathBuf::from("/opt/codex/bin").join(executable_name)
     );

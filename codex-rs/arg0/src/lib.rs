@@ -591,14 +591,14 @@ mod tests {
             temp_dir,
             lock_file,
             Arg0DispatchPaths {
-                codex_self_exe: Some(PathBuf::from("/usr/bin/codex")),
+                codex_self_exe: Some(PathBuf::from("/usr/bin/codexw")),
                 codex_linux_sandbox_exe: Some(alias_path.clone()),
                 main_execve_wrapper_exe: None,
             },
         );
 
         assert_eq!(
-            linux_sandbox_exe_path(Some(&path_entry), Some(PathBuf::from("/usr/bin/codex"))),
+            linux_sandbox_exe_path(Some(&path_entry), Some(PathBuf::from("/usr/bin/codexw"))),
             Some(alias_path),
         );
         Ok(())
@@ -672,7 +672,7 @@ mod tests {
             temp_dir,
             lock_file,
             Arg0DispatchPaths {
-                codex_self_exe: Some(PathBuf::from("/usr/bin/codex")),
+                codex_self_exe: Some(PathBuf::from("/usr/bin/codexw")),
                 codex_linux_sandbox_exe: Some(alias_path.clone()),
                 main_execve_wrapper_exe: Some(alias_path),
             },
@@ -680,7 +680,7 @@ mod tests {
 
         super::build_runtime()?.block_on(run_main_with_arg0_guard(
             /*path_entry_guard*/ Some(path_entry),
-            Some(PathBuf::from("/usr/bin/codex")),
+            Some(PathBuf::from("/usr/bin/codexw")),
             |paths| async move {
                 let alias_path = paths
                     .codex_linux_sandbox_exe

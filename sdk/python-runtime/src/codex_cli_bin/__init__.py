@@ -16,7 +16,7 @@ def bundled_package_dir() -> Path:
 
 
 def bundled_codex_path() -> Path:
-    exe = "codex.exe" if os.name == "nt" else "codex"
+    exe = "codexw.exe" if os.name == "nt" else "codexw"
     path = bundled_package_dir() / "bin" / exe
     if not path.is_file():
         raise FileNotFoundError(
