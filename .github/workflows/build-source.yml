@@ -32,7 +32,7 @@ jobs:
       - name: Test Rust unit packages
         run: cargo test --locked -p codex-code-mode -p codex-core --lib
       - name: Test workflow integration
-        run: cargo test --locked -p codex-core --test all workflow::
+        run: "cargo test --locked -p codex-core --test all workflow::"
       - name: Test workflow TUI
         run: cargo test --locked -p codex-tui workflows
       - name: Build release binary
