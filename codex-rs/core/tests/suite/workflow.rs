@@ -247,10 +247,6 @@ return {{ finding }};
                 .features
                 .enable(Feature::Collab)
                 .expect("enable collaboration");
-            config
-                .features
-                .enable(Feature::MultiAgentV2)
-                .expect("enable multi-agent v2");
         });
     let test = builder.build_with_auto_env(&server).await?;
     let submit = tokio::spawn(async move { test.submit_turn(PARENT_PROMPT).await });
