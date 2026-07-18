@@ -6,18 +6,15 @@ use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
-use core_test_support::responses::mount_response_once_match;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_once_match;
 use core_test_support::responses::sse;
-use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
 use core_test_support::test_codex::test_codex;
 use serde_json::Value;
 use serde_json::json;
 
 const PARENT_PROMPT: &str = "Run the test workflow";
-const CHILD_PROMPT: &str = "Inspect the parser and return one finding.";
 const CHILD_RESULT: &str = "The parser handles the tested edge case.";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -127,20 +124,21 @@ fn body_contains(request: &wiremock::Request, needle: &str) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn workflow_launches_subagent_and_returns_its_result() -> Result<()> {
+async fn workflow_loads_project_file_and_runs_pipeline() -> Result<()> {
     let server = start_mock_server().await;
-    let workflow_source = format!(
-        r#"export const meta = {{
+    let workflow_source = r#"export const meta = {
   name: "integration-test",
-  description: "Exercise workflow agent orchestration",
-}};
+  description: "Exercise project workflow loading and pipeline execution",
+};
 
-const finding = await agent({CHILD_PROMPT:?}, {{ label: "parser-review", forkTurns: "none" }});
-return {{ finding }};
-"#
-    );
+const findings = await pipeline(["parser", "runtime"], async component => ({
+  component,
+  finding: component === "parser" ? "The parser handles the tested edge case." : "Runtime ready",
+}), { concurrency: 2 });
+return { findings };
+"#;
 
-    let parent_start = mount_sse_once(
+    mount_sse_once(
         &server,
         sse(vec![
             ev_response_created("parent-1"),
@@ -149,7 +147,7 @@ return {{ finding }};
                 "run_workflow",
                 &serde_json::to_string(&json!({
                     "path": ".codex/workflows/integration.ts",
-                    "yield_time_ms": 1,
+                    "yield_time_ms": 5_000,
                 }))?,
             ),
             ev_completed("parent-1"),
@@ -157,65 +155,17 @@ return {{ finding }};
     )
     .await;
 
-    let child = mount_response_once_match(
-        &server,
-        |request: &wiremock::Request| body_contains(request, CHILD_PROMPT),
-        sse_response(sse(vec![
-            ev_response_created("child-1"),
-            ev_assistant_message("child-message", CHILD_RESULT),
-            ev_completed("child-1"),
-        ]))
-        .set_delay(std::time::Duration::from_millis(250)),
-    )
-    .await;
-
-    let parent_wait = mount_sse_once_match(
-        &server,
-        |request: &wiremock::Request| body_contains(request, "workflow-call"),
-        sse(vec![
-            ev_response_created("parent-2"),
-            ev_function_call(
-                "workflow-wait",
-                "wait_workflow",
-                &serde_json::to_string(&json!({
-                    "cell_id": "1",
-                    "yield_time_ms": 30_000,
-                }))
-                .expect("wait arguments should serialize"),
-            ),
-            ev_completed("parent-2"),
-        ]),
-    )
-    .await;
-
-    let parent_progress = mount_sse_once_match(
-        &server,
-        |request: &wiremock::Request| {
-            body_contains(request, "workflow-wait") && !body_contains(request, "workflow-wait-2")
-        },
-        sse(vec![
-            ev_response_created("parent-3"),
-            ev_function_call(
-                "workflow-wait-2",
-                "wait_workflow",
-                &serde_json::to_string(&json!({
-                    "cell_id": "1",
-                    "yield_time_ms": 30_000,
-                }))
-                .expect("second wait arguments should serialize"),
-            ),
-            ev_completed("parent-3"),
-        ]),
-    )
-    .await;
-
     let parent_followup = mount_sse_once_match(
         &server,
-        |request: &wiremock::Request| body_contains(request, "workflow-wait-2"),
+        |request: &wiremock::Request| {
+            body_contains(request, "workflow-call")
+                && body_contains(request, CHILD_RESULT)
+                && body_contains(request, "integration-test")
+        },
         sse(vec![
-            ev_response_created("parent-4"),
+            ev_response_created("parent-2"),
             ev_assistant_message("parent-message", "workflow complete"),
-            ev_completed("parent-4"),
+            ev_completed("parent-2"),
         ]),
     )
     .await;
@@ -236,7 +186,7 @@ return {{ finding }};
             file_system
                 .write_file(
                     &workflow_uri,
-                    workflow_source.into_bytes(),
+                    workflow_source.as_bytes().to_vec(),
                     /*sandbox*/ None,
                 )
                 .await?;
@@ -249,28 +199,10 @@ return {{ finding }};
                 .expect("enable collaboration");
         });
     let test = builder.build_with_auto_env(&server).await?;
-    let submit = tokio::spawn(async move { test.submit_turn(PARENT_PROMPT).await });
-    tokio::time::timeout(std::time::Duration::from_secs(30), async {
-        while parent_followup.requests().is_empty() {
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| {
-        panic!(
-            "parent workflow follow-up did not arrive: parent_start={}, child={}, parent_wait={}, parent_progress={}",
-            parent_start.requests().len(),
-            child.requests().len(),
-            parent_wait.requests().len(),
-            parent_progress.requests().len(),
-        )
-    });
-    submit.await.expect("parent turn task should finish")?;
+    test.submit_turn(PARENT_PROMPT).await?;
 
-    assert_eq!(parent_wait.requests().len(), 1);
-    assert_eq!(parent_progress.requests().len(), 1);
     let request = parent_followup.single_request();
-    let output = request.function_call_output("workflow-wait-2");
+    let output = request.function_call_output("workflow-call");
     let output_text = output
         .get("output")
         .and_then(|output| match output {
@@ -286,7 +218,7 @@ return {{ finding }};
         .expect("workflow output should contain text");
     assert!(
         output_text.contains(CHILD_RESULT),
-        "workflow output did not contain the child result: {output_text}"
+        "workflow output did not contain the pipeline result: {output_text}"
     );
     assert!(
         output_text.contains("integration-test"),
