@@ -191,6 +191,7 @@ async function agent(prompt, options = {{}}) {{
     throw new Error("agent timeoutMs must be an integer from 1000 through 1800000");
   }}
   return __withAgentPermit(async () => {{
+    await __workflowYieldControl();
     const spawnAgent = __requireAgentTool(__workflowSpawnAgent, "spawn_agent");
     const waitAgent = __requireAgentTool(__workflowWaitAgent, "wait_agent");
     const stopAgent = __requireAgentTool(__workflowStopAgent, "stop_agent");
@@ -210,7 +211,6 @@ async function agent(prompt, options = {{}}) {{
           reasoning_effort: options.reasoningEffort,
         }});
     const target = __workflowAgentApi === "v1" ? spawned.agent_id : spawned.task_name;
-    await __workflowYieldControl();
     const deadline = __now() + timeoutMs;
     let timedOut = false;
     try {{
