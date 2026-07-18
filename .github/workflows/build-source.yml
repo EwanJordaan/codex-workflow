@@ -15,8 +15,8 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Test and build Codex CLI
+  test:
+    name: Test Codex CLI
     runs-on: ubuntu-24.04
     env:
       RUST_MIN_STACK: "8388608"
@@ -35,13 +35,29 @@ jobs:
         run: "cargo test --locked -p codex-core --test all workflow::"
       - name: Test workflow TUI
         run: cargo test --locked -p codex-tui workflows
+
+  build-linux:
+    name: Build Linux Codex CLI
+    needs: test
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name == 'main' }}
+    runs-on: ubuntu-24.04
+    env:
+      RUST_MIN_STACK: "8388608"
+    defaults:
+      run:
+        working-directory: codex-rs
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
       - name: Build release binary
-        if: ${{ (github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && inputs.ref == 'main') }}
         run: cargo build --locked --release -p codex-cli
 
   build-windows:
     name: Build Windows Codex CLI
-    needs: build
+    needs: test
     if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name == 'main' }}
     runs-on: windows-latest
     defaults:
