@@ -226,7 +226,7 @@ async function agent(prompt, options = {{}}) {{
         const waited = __workflowAgentApi === "v1"
           ? await waitAgent({{ targets: [target], timeout_ms: waitMs }})
           : await waitAgent({{ timeout_ms: waitMs }});
-        if (waited.timed_out) continue;
+        if (__workflowAgentApi === "v1" && waited.timed_out) continue;
         let rawStatus;
         if (__workflowAgentApi === "v1") {{
           rawStatus = __objectValues(waited.status)[0];
