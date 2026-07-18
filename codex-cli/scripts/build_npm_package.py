@@ -128,7 +128,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--vendor-src",
         type=Path,
-        help="Directory containing pre-installed native binaries to bundle (vendor root).",
+        help=(
+            "Directory containing pre-installed native binaries to bundle (vendor root). "
+            "When packaging codex, this creates a self-contained package."
+        ),
     )
     return parser.parse_args()
 
@@ -147,13 +150,23 @@ def main() -> int:
     if not version:
         raise RuntimeError("Must specify --version or --release-version.")
 
+    vendor_src = args.vendor_src.resolve() if args.vendor_src else None
+    standalone_codex = package == "codex" and vendor_src is not None
     staging_dir, created_temp = prepare_staging_dir(args.staging_dir)
 
     try:
-        stage_sources(staging_dir, version, package)
+        stage_sources(
+            staging_dir,
+            version,
+            package,
+            standalone_codex=standalone_codex,
+        )
 
-        vendor_src = args.vendor_src.resolve() if args.vendor_src else None
-        native_components = PACKAGE_NATIVE_COMPONENTS.get(package, [])
+        native_components = (
+            [CODEX_PACKAGE_COMPONENT]
+            if standalone_codex
+            else PACKAGE_NATIVE_COMPONENTS.get(package, [])
+        )
         target_filter = PACKAGE_TARGET_FILTERS.get(package)
 
         if native_components:
@@ -226,7 +239,13 @@ def prepare_staging_dir(staging_dir: Path | None) -> tuple[Path, bool]:
     return temp_dir, True
 
 
-def stage_sources(staging_dir: Path, version: str, package: str) -> None:
+def stage_sources(
+    staging_dir: Path,
+    version: str,
+    package: str,
+    *,
+    standalone_codex: bool = False,
+) -> None:
     package_json: dict
     package_json_path: Path | None = None
 
@@ -292,15 +311,19 @@ def stage_sources(staging_dir: Path, version: str, package: str) -> None:
         package_json["version"] = version
 
     if package == "codex":
-        package_json["files"] = ["bin/codex.js"]
-        package_json["optionalDependencies"] = {
-            CODEX_PLATFORM_PACKAGES[platform_package]["npm_name"]: (
-                f"npm:{CODEX_NPM_NAME}@"
-                f"{compute_platform_package_version(version, CODEX_PLATFORM_PACKAGES[platform_package]['npm_tag'])}"
-            )
-            for platform_package in PACKAGE_EXPANSIONS["codex"]
-            if platform_package != "codex"
-        }
+        if standalone_codex:
+            package_json["files"] = ["bin/codex.js", "vendor"]
+            package_json.pop("optionalDependencies", None)
+        else:
+            package_json["files"] = ["bin/codex.js"]
+            package_json["optionalDependencies"] = {
+                CODEX_PLATFORM_PACKAGES[platform_package]["npm_name"]: (
+                    f"npm:{CODEX_NPM_NAME}@"
+                    f"{compute_platform_package_version(version, CODEX_PLATFORM_PACKAGES[platform_package]['npm_tag'])}"
+                )
+                for platform_package in PACKAGE_EXPANSIONS["codex"]
+                if platform_package != "codex"
+            }
 
     elif package == "codex-sdk":
         scripts = package_json.get("scripts")

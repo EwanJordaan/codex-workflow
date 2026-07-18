@@ -41,7 +41,7 @@ jobs:
 
   build-windows:
     name: Build Windows Codex CLI
-    if: ${{ (github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && inputs.ref == 'main') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name == 'main' }}
     runs-on: windows-latest
     defaults:
       run:
@@ -54,9 +54,28 @@ jobs:
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
       - name: Build release binary
         run: cargo build --locked --release -p codex-cli
+      - name: Build standalone npm package
+        shell: pwsh
+        run: |
+          $vendorBin = Join-Path $env:RUNNER_TEMP "codex-vendor/x86_64-pc-windows-msvc/bin"
+          New-Item -ItemType Directory -Force -Path $vendorBin | Out-Null
+          Copy-Item "target/release/codexw.exe" (Join-Path $vendorBin "codexw.exe")
+          python ../codex-cli/scripts/build_npm_package.py `
+            --package codex `
+            --version "0.0.0-dev.${{ github.run_id }}" `
+            --vendor-src (Join-Path $env:RUNNER_TEMP "codex-vendor") `
+            --pack-output "target/release/codex-windows-x86_64.tgz"
+      - name: Verify standalone npm package
+        shell: pwsh
+        run: |
+          $installRoot = Join-Path $env:RUNNER_TEMP "codex-npm-install"
+          npm install --global --prefix $installRoot "target/release/codex-windows-x86_64.tgz"
+          & (Join-Path $installRoot "codex.cmd") --version
       - name: Upload Windows Codex CLI
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: codex-windows-x86_64
-          path: codex-rs/target/release/codexw.exe
+          path: |
+            codex-rs/target/release/codexw.exe
+            codex-rs/target/release/codex-windows-x86_64.tgz
           if-no-files-found: error
