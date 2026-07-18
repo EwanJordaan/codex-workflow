@@ -14,6 +14,8 @@ use codex_code_mode::NotificationFuture;
 use codex_code_mode::RuntimeResponse;
 use codex_code_mode::ToolDefinition;
 use codex_code_mode::ToolInvocationFuture;
+use codex_code_mode::WaitOutcome;
+use codex_code_mode::WaitRequest;
 use codex_protocol::ToolName;
 use pretty_assertions::assert_eq;
 use serde_json::Map;
@@ -21,6 +23,7 @@ use serde_json::Value;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
+use codex_code_mode::WorkflowAgentApi;
 use codex_code_mode::compile_workflow_source;
 
 #[derive(Default)]
@@ -148,8 +151,18 @@ fn workflow_tool(name: &str) -> ToolDefinition {
 }
 
 async fn execute_workflow(source: &str, delegate: Arc<AgentDelegate>) -> RuntimeResponse {
-    let compiled = compile_workflow_source(source, None).expect("workflow should compile");
-    InProcessCodeModeSession::with_delegate(delegate)
+    let compiled = compile_workflow_source(
+        source,
+        /*args*/ None,
+        &WorkflowAgentApi::V1 {
+            spawn_tool: "multi_agent_v1__spawn_agent".to_string(),
+            wait_tool: "multi_agent_v1__wait_agent".to_string(),
+            close_tool: "multi_agent_v1__close_agent".to_string(),
+        },
+    )
+    .expect("workflow should compile");
+    let session = InProcessCodeModeSession::with_delegate(delegate);
+    let mut response = session
         .execute(ExecuteRequest {
             tool_call_id: "workflow-runtime-test".to_string(),
             enabled_tools: ["spawn_agent", "wait_agent", "close_agent"]
@@ -163,7 +176,20 @@ async fn execute_workflow(source: &str, delegate: Arc<AgentDelegate>) -> Runtime
         .expect("workflow runtime should start")
         .initial_response()
         .await
-        .expect("workflow runtime should finish")
+        .expect("workflow runtime should finish");
+    while let RuntimeResponse::Yielded { cell_id, .. } = &response {
+        let outcome = session
+            .wait(WaitRequest {
+                cell_id: cell_id.clone(),
+                yield_time_ms: 30_000,
+            })
+            .await
+            .expect("workflow runtime wait should finish");
+        response = match outcome {
+            WaitOutcome::LiveCell(response) | WaitOutcome::MissingCell(response) => response,
+        };
+    }
+    response
 }
 
 fn response_json(response: RuntimeResponse) -> Value {

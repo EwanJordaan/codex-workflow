@@ -490,6 +490,12 @@ impl App {
                 ));
                 tui.frame_requester().schedule_frame();
             }
+            AppEvent::RunSavedWorkflow { path } => {
+                self.chat_widget.run_saved_workflow(path, None);
+            }
+            AppEvent::InspectWorkflowRuns => {
+                self.chat_widget.inspect_workflow_runs();
+            }
             AppEvent::OpenAppLink {
                 app_id,
                 title,

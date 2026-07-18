@@ -52,6 +52,112 @@ pub(crate) const PUBLIC_TOOL_NAME: &str = codex_code_mode::PUBLIC_TOOL_NAME;
 pub(crate) const WAIT_TOOL_NAME: &str = codex_code_mode::WAIT_TOOL_NAME;
 pub(crate) const DEFAULT_WAIT_YIELD_TIME_MS: u64 = codex_code_mode::DEFAULT_WAIT_YIELD_TIME_MS;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CodeCellStatus {
+    Running,
+    Completed,
+    Failed,
+    Terminated,
+}
+
+pub(crate) struct CodeCellExecution {
+    pub(crate) output: FunctionToolOutput,
+    pub(crate) cell_id: CellId,
+    pub(crate) status: CodeCellStatus,
+    pub(crate) response: RuntimeResponse,
+}
+
+pub(crate) async fn execute_code_cell(
+    session: Arc<Session>,
+    turn: Arc<TurnContext>,
+    call_id: String,
+    source: String,
+    enabled_tools: Vec<codex_code_mode::ToolDefinition>,
+    yield_time_ms: Option<u64>,
+    max_output_tokens: Option<usize>,
+) -> Result<FunctionToolOutput, String> {
+    execute_code_cell_with_info(
+        session,
+        turn,
+        call_id,
+        source,
+        enabled_tools,
+        yield_time_ms,
+        max_output_tokens,
+    )
+    .await
+    .map(|execution| execution.output)
+}
+
+pub(crate) async fn execute_code_cell_with_info(
+    session: Arc<Session>,
+    turn: Arc<TurnContext>,
+    call_id: String,
+    source: String,
+    enabled_tools: Vec<codex_code_mode::ToolDefinition>,
+    yield_time_ms: Option<u64>,
+    max_output_tokens: Option<usize>,
+) -> Result<CodeCellExecution, String> {
+    let started_at = std::time::Instant::now();
+    let started_cell = session
+        .services
+        .code_mode_service
+        .execute(codex_code_mode::ExecuteRequest {
+            tool_call_id: call_id.clone(),
+            enabled_tools,
+            source: source.clone(),
+            yield_time_ms,
+            max_output_tokens,
+        })
+        .await?;
+    let cell_id = started_cell.cell_id.clone();
+    let code_cell_trace = session.services.rollout_thread_trace.start_code_cell_trace(
+        turn.sub_id.as_str(),
+        cell_id.as_str(),
+        call_id.as_str(),
+        source.as_str(),
+    );
+    session
+        .services
+        .code_mode_service
+        .mark_cell_ready_for_dispatch(&cell_id);
+    let response = started_cell.initial_response().await?;
+    let status = code_cell_status(&response);
+    code_cell_trace.record_initial_response(&response);
+    if !matches!(response, RuntimeResponse::Yielded { .. }) {
+        code_cell_trace.record_ended(&response);
+        session
+            .services
+            .code_mode_service
+            .finish_cell_dispatch(&cell_id);
+    }
+    session.services.elicitations.wait_until_clear().await;
+    let output = handle_runtime_response(
+        &ExecContext { session, turn },
+        response.clone(),
+        max_output_tokens,
+        started_at,
+    )
+    .await?;
+    Ok(CodeCellExecution {
+        output,
+        cell_id,
+        status,
+        response,
+    })
+}
+
+pub(crate) fn code_cell_status(response: &RuntimeResponse) -> CodeCellStatus {
+    match response {
+        RuntimeResponse::Yielded { .. } => CodeCellStatus::Running,
+        RuntimeResponse::Terminated { .. } => CodeCellStatus::Terminated,
+        RuntimeResponse::Result { error_text, .. } if error_text.is_some() => {
+            CodeCellStatus::Failed
+        }
+        RuntimeResponse::Result { .. } => CodeCellStatus::Completed,
+    }
+}
+
 /// Returns true for the un-namespaced code-mode `exec` tool.
 pub(crate) fn is_exec_tool_name(tool_name: &ToolName) -> bool {
     tool_name.namespace.is_none() && tool_name.name == PUBLIC_TOOL_NAME
@@ -273,7 +379,7 @@ fn truncate_code_mode_result(
 }
 
 async fn call_nested_tool(
-    _exec: ExecContext,
+    exec: ExecContext,
     tool_runtime: ToolCallRuntime,
     invocation: CodeModeNestedToolCall,
     cancellation_token: CancellationToken,
@@ -291,13 +397,18 @@ async fn call_nested_tool(
         )));
     }
 
+    let observed_target = input
+        .as_ref()
+        .and_then(|input| input.get("target"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
     let payload = match build_nested_tool_payload(tool_kind, &tool_name, input) {
         Ok(payload) => payload,
         Err(error) => return Err(FunctionCallError::RespondToModel(error)),
     };
 
     let call = ToolCall {
-        tool_name,
+        tool_name: tool_name.clone(),
         call_id: format!("{PUBLIC_TOOL_NAME}-{}", uuid::Uuid::new_v4()),
         payload,
     };
@@ -311,7 +422,88 @@ async fn call_nested_tool(
             cancellation_token,
         )
         .await?;
-    Ok(result.code_mode_result())
+    let result = result.code_mode_result();
+    observe_workflow_agent_call(
+        &exec,
+        &cell_id,
+        &tool_name,
+        observed_target.as_deref(),
+        &result,
+    )
+    .await;
+    Ok(result)
+}
+
+async fn observe_workflow_agent_call(
+    exec: &ExecContext,
+    cell_id: &CellId,
+    tool_name: &ToolName,
+    target: Option<&str>,
+    result: &serde_json::Value,
+) {
+    use crate::tools::workflow::WorkflowAgentVersion;
+    use crate::tools::workflow::WorkflowOwnedAgent;
+
+    match tool_name.name.as_str() {
+        "spawn_agent" => {
+            let (target, version) = if tool_name.namespace.as_deref() == Some("multi_agent_v1") {
+                (
+                    result.get("agent_id").and_then(serde_json::Value::as_str),
+                    WorkflowAgentVersion::V1,
+                )
+            } else {
+                (
+                    result.get("task_name").and_then(serde_json::Value::as_str),
+                    WorkflowAgentVersion::V2,
+                )
+            };
+            let Some(target) = target else {
+                return;
+            };
+            let thread_id = if matches!(version, WorkflowAgentVersion::V1) {
+                codex_protocol::ThreadId::from_string(target).ok()
+            } else {
+                crate::agent::agent_resolver::resolve_agent_target(
+                    &exec.session,
+                    &exec.turn,
+                    target,
+                )
+                .await
+                .ok()
+            };
+            if let Some(thread_id) = thread_id {
+                exec.session
+                    .services
+                    .workflow_service
+                    .track_agent(cell_id.clone(), WorkflowOwnedAgent { thread_id, version })
+                    .await;
+            }
+        }
+        "close_agent" | "interrupt_agent" => {
+            let Some(target) = target else {
+                return;
+            };
+            let thread_id = if let Ok(thread_id) = codex_protocol::ThreadId::from_string(target) {
+                Some(thread_id)
+            } else {
+                crate::agent::agent_resolver::resolve_agent_target(
+                    &exec.session,
+                    &exec.turn,
+                    target,
+                )
+                .await
+                .ok()
+            };
+            if let Some(thread_id) = thread_id {
+                exec.session
+                    .services
+                    .workflow_service
+                    .untrack_agent(cell_id, thread_id)
+                    .await;
+            }
+        }
+        _ => {}
+    }
 }
 
 fn build_nested_tool_payload(

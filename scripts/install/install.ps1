@@ -262,12 +262,12 @@ function Get-CurrentInstalledVersion {
         [string]$StandaloneCurrentDir
     )
 
-    $standaloneVersion = Get-VersionFromBinary -CodexPath (Join-Path $StandaloneCurrentDir "bin\codex.exe")
+    $standaloneVersion = Get-VersionFromBinary -CodexPath (Join-Path $StandaloneCurrentDir "bin\codexw.exe")
     if (-not [string]::IsNullOrWhiteSpace($standaloneVersion)) {
         return $standaloneVersion
     }
 
-    $standaloneVersion = Get-VersionFromBinary -CodexPath (Join-Path $StandaloneCurrentDir "codex.exe")
+    $standaloneVersion = Get-VersionFromBinary -CodexPath (Join-Path $StandaloneCurrentDir "codexw.exe")
     if (-not [string]::IsNullOrWhiteSpace($standaloneVersion)) {
         return $standaloneVersion
     }
@@ -293,7 +293,7 @@ function Test-OldStandaloneBinLayout {
         return $false
     }
 
-    $requiredFiles = @("codex.exe", "rg.exe")
+    $requiredFiles = @("codexw.exe", "rg.exe")
     foreach ($fileName in $requiredFiles) {
         if (-not (Test-Path -LiteralPath (Join-Path $VisibleBinDir $fileName) -PathType Leaf)) {
             return $false
@@ -301,7 +301,7 @@ function Test-OldStandaloneBinLayout {
     }
 
     $knownFiles = @(
-        "codex.exe",
+        "codexw.exe",
         "rg.exe",
         "codex-command-runner.exe",
         "codex-windows-sandbox.exe",
@@ -537,7 +537,7 @@ function Test-PackageContentsAreComplete {
 
     $expectedFiles = @(
         "codex-package.json",
-        "bin\codex.exe",
+        "bin\codexw.exe",
         "bin\codex-code-mode-host.exe",
         "codex-path\rg.exe",
         "codex-resources\codex-command-runner.exe",
@@ -562,7 +562,7 @@ function Test-LegacyPlatformNpmContentsAreComplete {
     }
 
     $expectedFiles = @(
-        "codex.exe",
+        "codexw.exe",
         "codex-resources\codex-command-runner.exe",
         "codex-resources\codex-windows-sandbox-setup.exe",
         "codex-resources\rg.exe"
@@ -692,7 +692,7 @@ function Test-VisibleCodexCommand {
         [string]$VisibleBinDir
     )
 
-    $codexCommand = Join-Path $VisibleBinDir "codex.exe"
+    $codexCommand = Join-Path $VisibleBinDir "codexw.exe"
     & $codexCommand --version *> $null
     if ($LASTEXITCODE -ne 0) {
         throw "Installed Codex command failed verification: $codexCommand --version"
@@ -828,7 +828,7 @@ try {
                 $resourcesDir = Join-Path $stagingDir "codex-resources"
                 New-Item -ItemType Directory -Force -Path $resourcesDir | Out-Null
                 $copyMap = @{
-                    "codex/codex.exe" = "codex.exe"
+                    "codex/codexw.exe" = "codexw.exe"
                     "codex/codex-command-runner.exe" = "codex-resources\codex-command-runner.exe"
                     "codex/codex-windows-sandbox-setup.exe" = "codex-resources\codex-windows-sandbox-setup.exe"
                     "path/rg.exe" = "codex-resources\rg.exe"
@@ -921,7 +921,7 @@ Write-Step "Current PowerShell session: codex"
 Write-Step "Future PowerShell windows: open a new PowerShell window and run: codex"
 Write-Host "Codex CLI $resolvedVersion installed successfully."
 
-$codexCommand = Join-Path $visibleBinDir "codex.exe"
+$codexCommand = Join-Path $visibleBinDir "codexw.exe"
 if (Prompt-YesNo "Start Codex now?") {
     Write-Step "Launching Codex"
     & $codexCommand

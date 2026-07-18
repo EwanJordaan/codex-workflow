@@ -100,7 +100,7 @@ fi
 case "$bundle" in
   primary)
     variant="codex"
-    entrypoint="codex"
+    entrypoint="codexw"
     archive_stem="codex-package"
     ;;
   app-server)

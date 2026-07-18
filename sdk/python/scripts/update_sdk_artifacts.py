@@ -50,7 +50,7 @@ def _is_windows() -> bool:
 
 
 def runtime_binary_name() -> str:
-    return "codex.exe" if _is_windows() else "codex"
+    return "codexw.exe" if _is_windows() else "codexw"
 
 
 def runtime_code_mode_host_name() -> str:

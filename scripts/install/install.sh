@@ -6,7 +6,7 @@ RELEASE="${CODEX_RELEASE:-latest}"
 NON_INTERACTIVE="${CODEX_NON_INTERACTIVE:-false}"
 
 BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
-BIN_PATH="$BIN_DIR/codex"
+BIN_PATH="$BIN_DIR/codexw"
 CODE_MODE_HOST_BIN_PATH="$BIN_DIR/codex-code-mode-host"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 STANDALONE_ROOT="$CODEX_HOME_DIR/packages/standalone"
@@ -605,13 +605,13 @@ version_from_binary() {
 }
 
 current_installed_version() {
-  version="$(version_from_binary "$CURRENT_LINK/bin/codex" || true)"
+  version="$(version_from_binary "$CURRENT_LINK/bin/codexw" || true)"
   if [ -n "$version" ]; then
     printf '%s\n' "$version"
     return 0
   fi
 
-  version="$(version_from_binary "$CURRENT_LINK/codex" || true)"
+  version="$(version_from_binary "$CURRENT_LINK/codexw" || true)"
   if [ -n "$version" ]; then
     printf '%s\n' "$version"
     return 0
@@ -770,13 +770,13 @@ install_package_release() {
   mkdir -p "$stage_release"
   tar -xzf "$archive_path" -C "$stage_release"
   chmod 0755 \
-    "$stage_release/bin/codex" \
+    "$stage_release/bin/codexw" \
     "$stage_release/bin/codex-code-mode-host" \
     "$stage_release/codex-path/rg"
   if [ -f "$stage_release/codex-resources/bwrap" ]; then
     chmod 0755 "$stage_release/codex-resources/bwrap"
   fi
-  ln -sf "bin/codex" "$stage_release/codex"
+  ln -sf "bin/codexw" "$stage_release/codexw"
 
   if [ -e "$release_dir" ] || [ -L "$release_dir" ]; then
     rm -rf "$release_dir"
@@ -797,9 +797,9 @@ install_legacy_platform_npm_release() {
   mkdir -p "$stage_release/codex-resources" "$extract_dir"
   tar -xzf "$archive_path" -C "$extract_dir"
 
-  cp "$vendor_root/codex/codex" "$stage_release/codex"
+  cp "$vendor_root/codex/codexw" "$stage_release/codexw"
   cp "$vendor_root/path/rg" "$stage_release/codex-resources/rg"
-  chmod 0755 "$stage_release/codex" "$stage_release/codex-resources/rg"
+  chmod 0755 "$stage_release/codexw" "$stage_release/codex-resources/rg"
   if [ -f "$vendor_root/codex-resources/bwrap" ]; then
     cp "$vendor_root/codex-resources/bwrap" "$stage_release/codex-resources/bwrap"
     chmod 0755 "$stage_release/codex-resources/bwrap"
@@ -824,14 +824,14 @@ release_dir_is_complete() {
   case "$layout" in
     package)
       [ -f "$release_dir/codex-package.json" ] &&
-        [ -x "$release_dir/bin/codex" ] &&
+        [ -x "$release_dir/bin/codexw" ] &&
         [ -x "$release_dir/bin/codex-code-mode-host" ] &&
-        [ -x "$release_dir/codex" ] &&
+        [ -x "$release_dir/codexw" ] &&
         [ -x "$release_dir/codex-path/rg" ] ||
         return 1
       ;;
     legacy-platform-npm)
-      [ -x "$release_dir/codex" ] &&
+      [ -x "$release_dir/codexw" ] &&
         [ -x "$release_dir/codex-resources/rg" ] ||
         return 1
       ;;
@@ -856,10 +856,10 @@ update_current_link() {
 release_codex_relative_path() {
   release_dir="$1"
 
-  if [ -x "$release_dir/bin/codex" ]; then
-    printf 'bin/codex\n'
+  if [ -x "$release_dir/bin/codexw" ]; then
+    printf 'bin/codexw\n'
   else
-    printf 'codex\n'
+    printf 'codexw\n'
   fi
 }
 

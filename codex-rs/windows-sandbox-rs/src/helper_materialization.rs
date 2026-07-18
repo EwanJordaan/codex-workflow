@@ -468,7 +468,7 @@ mod tests {
         let release_dir = tmp.path().join("release");
         let resources_dir = release_dir.join(RESOURCES_DIRNAME);
         fs::create_dir_all(&resources_dir).expect("create resources dir");
-        let exe = release_dir.join("codex.exe");
+        let exe = release_dir.join("codexw.exe");
         let helper = resources_dir.join("codex-command-runner.exe");
         fs::write(&exe, b"codex").expect("write exe");
         fs::write(&helper, b"runner").expect("write helper");
@@ -488,7 +488,7 @@ mod tests {
         let resources_dir = package_dir.join(RESOURCES_DIRNAME);
         fs::create_dir_all(&bin_dir).expect("create bin dir");
         fs::create_dir_all(&resources_dir).expect("create resources dir");
-        let exe = bin_dir.join("codex.exe");
+        let exe = bin_dir.join("codexw.exe");
         let helper = resources_dir.join("codex-command-runner.exe");
         fs::write(&exe, b"codex").expect("write exe");
         fs::write(&helper, b"runner").expect("write helper");
@@ -509,7 +509,7 @@ mod tests {
         let bin_resources_dir = bin_dir.join(RESOURCES_DIRNAME);
         fs::create_dir_all(&package_resources_dir).expect("create package resources dir");
         fs::create_dir_all(&bin_resources_dir).expect("create bin resources dir");
-        let exe = bin_dir.join("codex.exe");
+        let exe = bin_dir.join("codexw.exe");
         let package_helper = package_resources_dir.join("codex-command-runner.exe");
         let bin_helper = bin_resources_dir.join("codex-command-runner.exe");
         fs::write(&exe, b"codex").expect("write exe");
@@ -529,7 +529,7 @@ mod tests {
         let release_dir = tmp.path().join("release");
         let resources_dir = release_dir.join(RESOURCES_DIRNAME);
         fs::create_dir_all(&resources_dir).expect("create resources dir");
-        let exe = release_dir.join("codex.exe");
+        let exe = release_dir.join("codexw.exe");
         let sibling_helper = release_dir.join("codex-command-runner.exe");
         let resource_helper = resources_dir.join("codex-command-runner.exe");
         fs::write(&exe, b"codex").expect("write exe");

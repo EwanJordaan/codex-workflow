@@ -89,7 +89,7 @@ function findCodexExecutable() {
     vendorRoot,
     targetTriple,
     "bin",
-    process.platform === "win32" ? "codex.exe" : "codex",
+    process.platform === "win32" ? "codexw.exe" : "codexw",
   );
   if (existsSync(codexExecutable)) {
     return codexExecutable;

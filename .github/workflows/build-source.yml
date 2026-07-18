@@ -31,6 +31,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
       - name: Test Rust unit packages
         run: cargo test --locked -p codex-code-mode -p codex-core --lib
+      - name: Test workflow integration
+        run: "cargo test --locked -p codex-core --test all workflow::"
+      - name: Test workflow TUI
+        run: cargo test --locked -p codex-tui workflows
       - name: Build release binary
         if: ${{ (github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && inputs.ref == 'main') }}
         run: cargo build --locked --release -p codex-cli
@@ -54,5 +58,5 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: codex-windows-x86_64
-          path: codex-rs/target/release/codex.exe
+          path: codex-rs/target/release/codexw.exe
           if-no-files-found: error

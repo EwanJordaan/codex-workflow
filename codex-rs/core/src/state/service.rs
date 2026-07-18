@@ -21,6 +21,7 @@ use crate::tools::code_mode::CodeModeService;
 use crate::tools::handlers::ToolSearchHandlerCache;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::sandboxing::ApprovalStore;
+use crate::tools::workflow::WorkflowService;
 use crate::unified_exec::UnifiedExecProcessManager;
 use anyhow::Result;
 use arc_swap::ArcSwap;
@@ -99,6 +100,7 @@ pub(crate) struct SessionServices {
     /// Session-scoped model client shared across turns.
     pub(crate) model_client: ModelClient,
     pub(crate) code_mode_service: CodeModeService,
+    pub(crate) workflow_service: WorkflowService,
     pub(crate) tool_search_handler_cache: ToolSearchHandlerCache,
     pub(crate) turn_environments: Arc<ThreadEnvironments>,
 }

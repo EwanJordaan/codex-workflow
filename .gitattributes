@@ -1,2 +1,7 @@
 codex-rs/app-server-protocol/schema/** linguist-generated
 codex-rs/hooks/schema/generated/** linguist-generated
+codex-rs/state/migrations/** text eol=lf
+codex-rs/state/logs_migrations/** text eol=lf
+codex-rs/state/goals_migrations/** text eol=lf
+codex-rs/state/memory_migrations/** text eol=lf
+codex-rs/state/thread_history_migrations/** text eol=lf

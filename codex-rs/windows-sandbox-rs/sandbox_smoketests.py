@@ -25,14 +25,14 @@ def _resolve_codex_cmd() -> List[str]:
     cargo_target = os.environ.get("CARGO_TARGET_DIR")
 
     candidates = [
-        ws_root / "target" / "debug" / "codex.exe",
-        ws_root / "target" / "release" / "codex.exe",
+        ws_root / "target" / "debug" / "codexw.exe",
+        ws_root / "target" / "release" / "codexw.exe",
     ]
     if cargo_target:
         cargo_base = Path(cargo_target)
         candidates.extend([
-            cargo_base / "debug" / "codex.exe",
-            cargo_base / "release" / "codex.exe",
+            cargo_base / "debug" / "codexw.exe",
+            cargo_base / "release" / "codexw.exe",
         ])
 
     for candidate in candidates:

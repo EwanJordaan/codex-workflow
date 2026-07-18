@@ -1,0 +1,12 @@
+---
+source: tui/src/chatwidget/workflows_tests.rs
+expression: "render_bottom_popup(&chat, /*width*/ 80)"
+---
+  Saved workflows
+  Inspect managed runs or launch a saved workflow.
+
+› 1. Managed runs  View active, completed, and terminated workflow runs
+  2. audit         .codex/workflows/audit.ts
+  3. review        .codex/workflows/review.js
+
+  Press enter to confirm or esc to go back
