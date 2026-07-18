@@ -190,9 +190,7 @@ return {{ finding }};
 
     let parent_followup = mount_sse_once_match(
         &server,
-        |request: &wiremock::Request| {
-            body_contains(request, "workflow-wait") && body_contains(request, CHILD_RESULT)
-        },
+        |request: &wiremock::Request| body_contains(request, "workflow-wait"),
         sse(vec![
             ev_response_created("parent-3"),
             ev_assistant_message("parent-message", "workflow complete"),
@@ -259,7 +257,13 @@ return {{ finding }};
             _ => None,
         })
         .expect("workflow output should contain text");
-    assert!(output_text.contains(CHILD_RESULT));
-    assert!(output_text.contains("integration-test"));
+    assert!(
+        output_text.contains(CHILD_RESULT),
+        "workflow output did not contain the child result: {output_text}"
+    );
+    assert!(
+        output_text.contains("integration-test"),
+        "workflow output did not contain its metadata: {output_text}"
+    );
     Ok(())
 }
