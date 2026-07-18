@@ -64,7 +64,7 @@ pub fn compile_workflow_source(
         .map_err(|err| format!("failed to serialize workflow spawn tool: {err}"))?;
     let wait_tool = serde_json::to_string(wait_tool)
         .map_err(|err| format!("failed to serialize workflow wait tool: {err}"))?;
-    let list_tool = serde_json::to_string(list_tool)
+    let list_tool = serde_json::to_string(&list_tool)
         .map_err(|err| format!("failed to serialize workflow list tool: {err}"))?;
     let stop_tool = serde_json::to_string(stop_tool)
         .map_err(|err| format!("failed to serialize workflow stop tool: {err}"))?;
