@@ -188,13 +188,34 @@ return {{ finding }};
     )
     .await;
 
-    let parent_followup = mount_sse_once_match(
+    let parent_progress = mount_sse_once_match(
         &server,
-        |request: &wiremock::Request| body_contains(request, "workflow-wait"),
+        |request: &wiremock::Request| {
+            body_contains(request, "workflow-wait") && !body_contains(request, "workflow-wait-2")
+        },
         sse(vec![
             ev_response_created("parent-3"),
-            ev_assistant_message("parent-message", "workflow complete"),
+            ev_function_call(
+                "workflow-wait-2",
+                "wait_workflow",
+                &serde_json::to_string(&json!({
+                    "cell_id": "1",
+                    "yield_time_ms": 30_000,
+                }))
+                .expect("second wait arguments should serialize"),
+            ),
             ev_completed("parent-3"),
+        ]),
+    )
+    .await;
+
+    let parent_followup = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| body_contains(request, "workflow-wait-2"),
+        sse(vec![
+            ev_response_created("parent-4"),
+            ev_assistant_message("parent-message", "workflow complete"),
+            ev_completed("parent-4"),
         ]),
     )
     .await;
@@ -241,17 +262,19 @@ return {{ finding }};
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "parent workflow follow-up did not arrive: parent_start={}, child={}, parent_wait={}",
+            "parent workflow follow-up did not arrive: parent_start={}, child={}, parent_wait={}, parent_progress={}",
             parent_start.requests().len(),
             child.requests().len(),
             parent_wait.requests().len(),
+            parent_progress.requests().len(),
         )
     });
     submit.await.expect("parent turn task should finish")?;
 
     assert_eq!(parent_wait.requests().len(), 1);
+    assert_eq!(parent_progress.requests().len(), 1);
     let request = parent_followup.single_request();
-    let output = request.function_call_output("workflow-wait");
+    let output = request.function_call_output("workflow-wait-2");
     let output_text = output
         .get("output")
         .and_then(|output| match output {

@@ -216,6 +216,7 @@ async function agent(prompt, options = {{}}) {{
           reasoning_effort: options.reasoningEffort,
         }});
     const target = __workflowAgentApi === "v1" ? spawned.agent_id : spawned.task_name;
+    await __workflowYieldControl();
     const deadline = __now() + timeoutMs;
     let pollDelayMs = 250;
     let timedOut = false;
