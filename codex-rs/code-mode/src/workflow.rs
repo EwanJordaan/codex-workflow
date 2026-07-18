@@ -76,6 +76,7 @@ const __validatedMeta = {validated_meta};
 const __workflowBody = {body};
 const __workflowTools = tools;
 const __workflowText = text;
+const __workflowYieldControl = yield_control;
 const __workflowAgentApi = {agent_api_version};
 const __workflowSpawnAgent = __workflowTools[{spawn_tool}];
 const __workflowWaitAgent = __workflowTools[{wait_tool}];
@@ -209,6 +210,7 @@ async function agent(prompt, options = {{}}) {{
           reasoning_effort: options.reasoningEffort,
         }});
     const target = __workflowAgentApi === "v1" ? spawned.agent_id : spawned.task_name;
+    await __workflowYieldControl();
     const deadline = __now() + timeoutMs;
     let timedOut = false;
     try {{
