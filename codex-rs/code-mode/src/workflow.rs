@@ -230,7 +230,7 @@ async function agent(prompt, options = {{}}) {{
           rawStatus = __objectValues(waited.status)[0];
         }} else {{
           const listAgents = __requireAgentTool(__workflowListAgents, "list_agents");
-          const snapshot = await listAgents({{ path_prefix: target }});
+          const snapshot = await listAgents({{}});
           const listed = (snapshot.agents || []).find(agent => agent.agent_name === target);
           if (!listed) continue;
           rawStatus = listed.agent_status;

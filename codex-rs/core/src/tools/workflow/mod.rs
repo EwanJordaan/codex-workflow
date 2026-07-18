@@ -639,24 +639,33 @@ async fn cleanup_workflow_agents(
 ) {
     let agents = session.services.workflow_service.take_agents(cell_id).await;
     for agent in agents {
-        let result = match agent.version {
-            WorkflowAgentVersion::V1 => {
-                session
-                    .services
-                    .agent_control
-                    .close_agent(agent.thread_id)
-                    .await
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            match agent.version {
+                WorkflowAgentVersion::V1 => {
+                    session
+                        .services
+                        .agent_control
+                        .close_agent(agent.thread_id)
+                        .await
+                }
+                WorkflowAgentVersion::V2 => {
+                    session
+                        .services
+                        .agent_control
+                        .interrupt_agent(agent.thread_id)
+                        .await
+                }
             }
-            WorkflowAgentVersion::V2 => {
-                session
-                    .services
-                    .agent_control
-                    .interrupt_agent(agent.thread_id)
-                    .await
+        })
+        .await;
+        match result {
+            Ok(Ok(_)) => {}
+            Ok(Err(err)) => {
+                warn!(%err, agent_id = %agent.thread_id, cell_id = %cell_id, "failed to stop workflow agent");
             }
-        };
-        if let Err(err) = result {
-            warn!(%err, agent_id = %agent.thread_id, cell_id = %cell_id, "failed to stop workflow agent");
+            Err(_) => {
+                warn!(agent_id = %agent.thread_id, cell_id = %cell_id, "timed out stopping workflow agent");
+            }
         }
     }
 }
