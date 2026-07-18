@@ -140,7 +140,7 @@ return {{ finding }};
 "#
     );
 
-    mount_sse_once(
+    let parent_start = mount_sse_once(
         &server,
         sse(vec![
             ev_response_created("parent-1"),
@@ -157,7 +157,7 @@ return {{ finding }};
     )
     .await;
 
-    mount_response_once_match(
+    let child = mount_response_once_match(
         &server,
         |request: &wiremock::Request| body_contains(request, CHILD_PROMPT),
         sse_response(sse(vec![
@@ -232,14 +232,22 @@ return {{ finding }};
                 .expect("enable multi-agent v2");
         });
     let test = builder.build_with_auto_env(&server).await?;
-    test.submit_turn(PARENT_PROMPT).await?;
+    let submit = tokio::spawn(async move { test.submit_turn(PARENT_PROMPT).await });
     tokio::time::timeout(std::time::Duration::from_secs(30), async {
         while parent_followup.requests().is_empty() {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     })
     .await
-    .expect("parent workflow follow-up should arrive");
+    .unwrap_or_else(|_| {
+        panic!(
+            "parent workflow follow-up did not arrive: parent_start={}, child={}, parent_wait={}",
+            parent_start.requests().len(),
+            child.requests().len(),
+            parent_wait.requests().len(),
+        )
+    });
+    submit.await.expect("parent turn task should finish")?;
 
     assert_eq!(parent_wait.requests().len(), 1);
     let request = parent_followup.single_request();
