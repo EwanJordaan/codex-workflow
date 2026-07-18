@@ -77,6 +77,7 @@ const __workflowBody = {body};
 const __workflowTools = tools;
 const __workflowText = text;
 const __workflowYieldControl = yield_control;
+const __workflowSetTimeout = setTimeout;
 const __workflowAgentApi = {agent_api_version};
 const __workflowSpawnAgent = __workflowTools[{spawn_tool}];
 const __workflowWaitAgent = __workflowTools[{wait_tool}];
@@ -94,6 +95,10 @@ const __workflowMaxAgents = 64;
 const __workflowMaxConcurrency = 4;
 const __workflowMaxPromptBytes = 9 * 1024;
 const __workflowMaxAgentTimeMs = 30 * 60 * 1000;
+
+function __workflowSleep(delayMs) {{
+  return new __WorkflowPromise(resolve => __workflowSetTimeout(resolve, delayMs));
+}}
 
 for (const name of [
   "tools", "ALL_TOOLS", "text", "image", "generatedImage", "store", "load",
@@ -212,6 +217,7 @@ async function agent(prompt, options = {{}}) {{
         }});
     const target = __workflowAgentApi === "v1" ? spawned.agent_id : spawned.task_name;
     const deadline = __now() + timeoutMs;
+    let pollDelayMs = 250;
     let timedOut = false;
     try {{
       while (true) {{
@@ -220,21 +226,21 @@ async function agent(prompt, options = {{}}) {{
           timedOut = true;
           throw new Error(`agent timed out after ${{timeoutMs}} ms`);
         }}
-        const waitMs = __workflowAgentApi === "v1"
-          ? Math.min(30000, Math.max(1000, remainingMs))
-          : 10000;
-        const waited = __workflowAgentApi === "v1"
-          ? await waitAgent({{ targets: [target], timeout_ms: waitMs }})
-          : await waitAgent({{ timeout_ms: waitMs }});
-        if (__workflowAgentApi === "v1" && waited.timed_out) continue;
         let rawStatus;
         if (__workflowAgentApi === "v1") {{
+          const waitMs = Math.min(30000, Math.max(1000, remainingMs));
+          const waited = await waitAgent({{ targets: [target], timeout_ms: waitMs }});
+          if (waited.timed_out) continue;
           rawStatus = __objectValues(waited.status)[0];
         }} else {{
           const listAgents = __requireAgentTool(__workflowListAgents, "list_agents");
           const snapshot = await listAgents({{}});
           const listed = (snapshot.agents || []).find(agent => agent.agent_name === target);
-          if (!listed) continue;
+          if (!listed) {{
+            await __workflowSleep(Math.min(pollDelayMs, remainingMs));
+            pollDelayMs = Math.min(5000, pollDelayMs * 2);
+            continue;
+          }}
           rawStatus = listed.agent_status;
         }}
         const status = __agentStatus(rawStatus);
@@ -248,7 +254,13 @@ async function agent(prompt, options = {{}}) {{
           return parsed;
         }}
         if (status.kind === "errored") throw new Error(`agent failed: ${{status.value}}`);
-        if (["pending_init", "running", "interrupted"].includes(status.kind)) continue;
+        if (["pending_init", "running", "interrupted"].includes(status.kind)) {{
+          if (__workflowAgentApi === "v2") {{
+            await __workflowSleep(Math.min(pollDelayMs, remainingMs));
+            pollDelayMs = Math.min(5000, pollDelayMs * 2);
+          }}
+          continue;
+        }}
         throw new Error(`agent ended with status ${{status.kind}}`);
       }}
     }} finally {{
