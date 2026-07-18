@@ -218,7 +218,9 @@ async function agent(prompt, options = {{}}) {{
           timedOut = true;
           throw new Error(`agent timed out after ${{timeoutMs}} ms`);
         }}
-        const waitMs = Math.min(30000, Math.max(1000, remainingMs));
+        const waitMs = __workflowAgentApi === "v1"
+          ? Math.min(30000, Math.max(1000, remainingMs))
+          : 10000;
         const waited = __workflowAgentApi === "v1"
           ? await waitAgent({{ targets: [target], timeout_ms: waitMs }})
           : await waitAgent({{ timeout_ms: waitMs }});

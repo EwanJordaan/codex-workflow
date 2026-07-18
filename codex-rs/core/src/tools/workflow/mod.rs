@@ -6,7 +6,6 @@ pub(crate) use service::DEFAULT_WORKFLOW_LIST_LIMIT;
 pub(crate) use service::MAX_WORKFLOW_LIST_LIMIT;
 pub(crate) use service::WorkflowAgentVersion;
 pub(crate) use service::WorkflowOwnedAgent;
-pub(crate) use service::WorkflowRunHandle;
 pub(crate) use service::WorkflowRunStatus;
 pub(crate) use service::WorkflowService;
 
