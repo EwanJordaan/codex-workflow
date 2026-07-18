@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
+use sqlx::AssertSqlSafe;
 use sqlx::Row;
+use sqlx::SqlSafeStr;
 use sqlx::SqlitePool;
 use sqlx::migrate::Migration;
 use sqlx::migrate::Migrator;
@@ -91,7 +93,7 @@ pub(crate) async fn repair_crlf_migration_checksums(
             migration.version,
             migration.description.clone(),
             migration.migration_type,
-            Cow::Owned(migration.sql.replace('\n', "\r\n")),
+            AssertSqlSafe(migration.sql.as_str().replace('\n', "\r\n")).into_sql_str(),
             migration.no_tx,
         );
         if applied_checksum == crlf_migration.checksum.as_ref() {
