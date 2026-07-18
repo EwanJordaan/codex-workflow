@@ -12,6 +12,7 @@ use sqlx::sqlite::SqlitePoolOptions;
 use uuid::Uuid;
 
 use super::STATE_MIGRATOR;
+use super::repair_crlf_migration_checksums;
 use super::repair_legacy_recency_migration_version;
 
 fn migrator_through(version: i64) -> Migrator {
@@ -30,6 +31,60 @@ fn migrator_through(version: i64) -> Migrator {
         create_schemas: STATE_MIGRATOR.create_schemas.clone(),
         no_tx: STATE_MIGRATOR.no_tx,
     }
+}
+
+#[tokio::test]
+async fn repairs_migrations_applied_with_crlf_line_endings() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    Migrator::with_migrations(
+        STATE_MIGRATOR
+            .migrations
+            .iter()
+            .map(|migration| {
+                Migration::new(
+                    migration.version,
+                    migration.description.clone(),
+                    migration.migration_type,
+                    Cow::Owned(migration.sql.replace('\n', "\r\n")),
+                    migration.no_tx,
+                )
+            })
+            .collect(),
+    )
+    .run(&pool)
+    .await
+    .expect("CRLF migrations should apply");
+
+    repair_crlf_migration_checksums(&pool, &STATE_MIGRATOR)
+        .await
+        .expect("CRLF migration checksums should be repaired");
+    STATE_MIGRATOR
+        .run(&pool)
+        .await
+        .expect("current migrations should validate after repair");
+
+    let applied = sqlx::query("SELECT version, checksum FROM _sqlx_migrations ORDER BY version")
+        .fetch_all(&pool)
+        .await
+        .expect("applied migrations should load")
+        .into_iter()
+        .map(|row| {
+            (
+                row.get::<i64, _>("version"),
+                row.get::<Vec<u8>, _>("checksum"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let expected = STATE_MIGRATOR
+        .migrations
+        .iter()
+        .map(|migration| (migration.version, migration.checksum.to_vec()))
+        .collect::<Vec<_>>();
+    assert_eq!(applied, expected);
 }
 
 #[tokio::test]

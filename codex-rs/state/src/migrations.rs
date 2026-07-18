@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
+use sqlx::Row;
 use sqlx::SqlitePool;
+use sqlx::migrate::Migration;
 use sqlx::migrate::Migrator;
 
 pub(crate) static STATE_MIGRATOR: Migrator = sqlx::migrate!("./migrations");
@@ -46,6 +48,75 @@ pub(crate) fn runtime_memories_migrator() -> Migrator {
 #[allow(dead_code)]
 pub(crate) fn runtime_thread_history_migrator() -> Migrator {
     runtime_migrator(&THREAD_HISTORY_MIGRATOR)
+}
+
+/// Canonicalize migration checksums written by Windows builds that embedded CRLF SQL files.
+///
+/// The checksum is repaired only when it matches the CRLF rendering of the exact current
+/// migration, so unrelated migration changes remain errors.
+pub(crate) async fn repair_crlf_migration_checksums(
+    pool: &SqlitePool,
+    migrator: &Migrator,
+) -> anyhow::Result<()> {
+    let migrations_table_exists = sqlx::query_scalar::<_, i64>(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations'",
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some();
+    if !migrations_table_exists {
+        return Ok(());
+    }
+
+    let applied_migrations =
+        sqlx::query("SELECT version, checksum FROM _sqlx_migrations WHERE success = TRUE")
+            .fetch_all(pool)
+            .await?;
+    let mut repairs = Vec::new();
+    for row in applied_migrations {
+        let version = row.get::<i64, _>("version");
+        let applied_checksum = row.get::<Vec<u8>, _>("checksum");
+        let Some(migration) = migrator
+            .migrations
+            .iter()
+            .find(|migration| migration.version == version)
+        else {
+            continue;
+        };
+        if applied_checksum == migration.checksum.as_ref() {
+            continue;
+        }
+
+        let crlf_migration = Migration::new(
+            migration.version,
+            migration.description.clone(),
+            migration.migration_type,
+            Cow::Owned(migration.sql.replace('\n', "\r\n")),
+            migration.no_tx,
+        );
+        if applied_checksum == crlf_migration.checksum.as_ref() {
+            repairs.push((
+                version,
+                applied_checksum,
+                migration.checksum.as_ref().to_vec(),
+            ));
+        }
+    }
+    if repairs.is_empty() {
+        return Ok(());
+    }
+
+    let mut transaction = pool.begin().await?;
+    for (version, crlf_checksum, canonical_checksum) in repairs {
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = ? AND checksum = ?")
+            .bind(canonical_checksum)
+            .bind(version)
+            .bind(crlf_checksum)
+            .execute(&mut *transaction)
+            .await?;
+    }
+    transaction.commit().await?;
+    Ok(())
 }
 
 pub(crate) async fn repair_legacy_recency_migration_version(
