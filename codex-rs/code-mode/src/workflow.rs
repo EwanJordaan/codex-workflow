@@ -8,8 +8,28 @@ struct WorkflowMeta {
     description: String,
 }
 
+/// Stable collaboration tool bindings used by generated workflow programs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WorkflowAgentApi {
+    V1 {
+        spawn_tool: String,
+        wait_tool: String,
+        close_tool: String,
+    },
+    V2 {
+        spawn_tool: String,
+        wait_tool: String,
+        list_tool: String,
+        interrupt_tool: String,
+    },
+}
+
 /// Validates a workflow file and wraps its body in the isolated code-mode runtime prelude.
-pub fn compile_workflow_source(source: &str, args: Option<&Value>) -> Result<String, String> {
+pub fn compile_workflow_source(
+    source: &str,
+    args: Option<&Value>,
+    agent_api: &WorkflowAgentApi,
+) -> Result<String, String> {
     let (body, meta) = parse_workflow_source(source)?;
     let args = args.map_or_else(
         || Ok("undefined".to_string()),
@@ -25,6 +45,29 @@ pub fn compile_workflow_source(source: &str, args: Option<&Value>) -> Result<Str
     .map_err(|err| format!("failed to serialize workflow metadata: {err}"))?;
     let body = serde_json::to_string(body)
         .map_err(|err| format!("failed to serialize workflow body: {err}"))?;
+    let (agent_api_version, spawn_tool, wait_tool, list_tool, stop_tool) = match agent_api {
+        WorkflowAgentApi::V1 {
+            spawn_tool,
+            wait_tool,
+            close_tool,
+        } => ("v1", spawn_tool, wait_tool, None, close_tool),
+        WorkflowAgentApi::V2 {
+            spawn_tool,
+            wait_tool,
+            list_tool,
+            interrupt_tool,
+        } => ("v2", spawn_tool, wait_tool, Some(list_tool), interrupt_tool),
+    };
+    let agent_api_version = serde_json::to_string(agent_api_version)
+        .map_err(|err| format!("failed to serialize workflow agent API: {err}"))?;
+    let spawn_tool = serde_json::to_string(spawn_tool)
+        .map_err(|err| format!("failed to serialize workflow spawn tool: {err}"))?;
+    let wait_tool = serde_json::to_string(wait_tool)
+        .map_err(|err| format!("failed to serialize workflow wait tool: {err}"))?;
+    let list_tool = serde_json::to_string(list_tool)
+        .map_err(|err| format!("failed to serialize workflow list tool: {err}"))?;
+    let stop_tool = serde_json::to_string(stop_tool)
+        .map_err(|err| format!("failed to serialize workflow stop tool: {err}"))?;
 
     Ok(format!(
         r#"const args = {args};
@@ -33,6 +76,11 @@ const __validatedMeta = {validated_meta};
 const __workflowBody = {body};
 const __workflowTools = tools;
 const __workflowText = text;
+const __workflowAgentApi = {agent_api_version};
+const __workflowSpawnAgent = __workflowTools[{spawn_tool}];
+const __workflowWaitAgent = __workflowTools[{wait_tool}];
+const __workflowListAgents = {list_tool} === null ? undefined : __workflowTools[{list_tool}];
+const __workflowStopAgent = __workflowTools[{stop_tool}];
 const __WorkflowPromise = Promise;
 const __objectEntries = Object.entries;
 const __objectValues = Object.values;
@@ -86,6 +134,11 @@ function __agentStatus(status) {{
   return {{ kind: String(status), value: undefined }};
 }}
 
+function __requireAgentTool(tool, name) {{
+  if (typeof tool !== "function") throw new Error(`workflow agent tool ${{name}} is unavailable`);
+  return tool;
+}}
+
 function __validateSchema(value, schema, path = "result") {{
   if (!schema || typeof schema !== "object") return;
   const type = schema.type;
@@ -137,38 +190,67 @@ async function agent(prompt, options = {{}}) {{
     throw new Error("agent timeoutMs must be an integer from 1000 through 1800000");
   }}
   return __withAgentPermit(async () => {{
-    const spawned = await __workflowTools.multi_agent_v1__spawn_agent({{
-      message,
-      agent_type: undefined,
-      fork_context: forkTurns !== "none",
-      model: options.model,
-      reasoning_effort: options.reasoningEffort,
-    }});
+    const spawnAgent = __requireAgentTool(__workflowSpawnAgent, "spawn_agent");
+    const waitAgent = __requireAgentTool(__workflowWaitAgent, "wait_agent");
+    const stopAgent = __requireAgentTool(__workflowStopAgent, "stop_agent");
+    const spawned = __workflowAgentApi === "v1"
+      ? await spawnAgent({{
+          message,
+          agent_type: undefined,
+          fork_context: forkTurns !== "none",
+          model: options.model,
+          reasoning_effort: options.reasoningEffort,
+        }})
+      : await spawnAgent({{
+          task_name: `workflow_agent_${{__workflowAgentCount}}`,
+          message,
+          fork_turns: forkTurns,
+          model: options.model,
+          reasoning_effort: options.reasoningEffort,
+        }});
+    const target = __workflowAgentApi === "v1" ? spawned.agent_id : spawned.task_name;
     const deadline = __now() + timeoutMs;
-    while (true) {{
-      const remainingMs = deadline - __now();
-      if (remainingMs <= 0) {{
-        await __workflowTools.multi_agent_v1__close_agent({{ target: spawned.agent_id }});
-        throw new Error(`agent timed out after ${{timeoutMs}} ms`);
+    let timedOut = false;
+    try {{
+      while (true) {{
+        const remainingMs = deadline - __now();
+        if (remainingMs <= 0) {{
+          timedOut = true;
+          throw new Error(`agent timed out after ${{timeoutMs}} ms`);
+        }}
+        const waitMs = Math.min(30000, Math.max(1000, remainingMs));
+        const waited = __workflowAgentApi === "v1"
+          ? await waitAgent({{ targets: [target], timeout_ms: waitMs }})
+          : await waitAgent({{ timeout_ms: waitMs }});
+        if (waited.timed_out) continue;
+        let rawStatus;
+        if (__workflowAgentApi === "v1") {{
+          rawStatus = __objectValues(waited.status)[0];
+        }} else {{
+          const listAgents = __requireAgentTool(__workflowListAgents, "list_agents");
+          const snapshot = await listAgents({{ path_prefix: target }});
+          const listed = (snapshot.agents || []).find(agent => agent.agent_name === target);
+          if (!listed) continue;
+          rawStatus = listed.agent_status;
+        }}
+        const status = __agentStatus(rawStatus);
+        if (status.kind === "completed") {{
+          const output = status.value ?? "";
+          if (!options.schema) return output;
+          let parsed;
+          try {{ parsed = JSON.parse(output); }}
+          catch (error) {{ throw new Error(`agent returned invalid JSON: ${{error}}`); }}
+          __validateSchema(parsed, options.schema);
+          return parsed;
+        }}
+        if (status.kind === "errored") throw new Error(`agent failed: ${{status.value}}`);
+        if (["pending_init", "running", "interrupted"].includes(status.kind)) continue;
+        throw new Error(`agent ended with status ${{status.kind}}`);
       }}
-      const waited = await __workflowTools.multi_agent_v1__wait_agent({{
-        targets: [spawned.agent_id],
-        timeout_ms: Math.min(30000, Math.max(1000, remainingMs)),
-      }});
-      if (waited.timed_out) continue;
-      const rawStatus = __objectValues(waited.status)[0];
-      const status = __agentStatus(rawStatus);
-      if (status.kind === "completed") {{
-        const output = status.value ?? "";
-        if (!options.schema) return output;
-        let parsed;
-        try {{ parsed = JSON.parse(output); }}
-        catch (error) {{ throw new Error(`agent returned invalid JSON: ${{error}}`); }}
-        __validateSchema(parsed, options.schema);
-        return parsed;
+    }} finally {{
+      if (__workflowAgentApi === "v1" || timedOut) {{
+        try {{ await stopAgent({{ target }}); }} catch (_) {{}}
       }}
-      if (status.kind === "errored") throw new Error(`agent failed: ${{status.value}}`);
-      throw new Error(`agent ended with status ${{status.kind}}`);
     }}
   }});
 }}

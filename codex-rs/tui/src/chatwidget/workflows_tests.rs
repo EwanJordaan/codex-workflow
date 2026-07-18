@@ -35,7 +35,7 @@ fn discovers_javascript_workflows_in_name_order() {
     fs::write(workflow_dir.join("ignored.md"), "ignored").expect("write ignored file");
 
     assert_eq!(
-        discover_saved_workflows(project.path()),
+        discover_saved_workflows(project.path(), project.path()),
         vec![
             SavedWorkflow {
                 name: "alpha".to_string(),
@@ -53,7 +53,49 @@ fn discovers_javascript_workflows_in_name_order() {
 fn missing_workflow_directory_is_empty() {
     let project = TempDir::new().expect("create project");
 
-    assert_eq!(discover_saved_workflows(project.path()), Vec::new());
+    assert_eq!(
+        discover_saved_workflows(project.path(), project.path()),
+        Vec::new()
+    );
+}
+
+#[test]
+fn discovers_nested_ancestor_and_personal_scopes_with_nearest_precedence() {
+    let project = TempDir::new().expect("create project");
+    let personal = TempDir::new().expect("create personal home");
+    let child = project.path().join("child");
+    let cwd = child.join("deep");
+    fs::create_dir_all(&cwd).expect("create nested project");
+    let project_workflows = project.path().join(".codex/workflows");
+    let child_workflows = child.join(".codex/workflows");
+    let personal_workflows = personal.path().join("workflows");
+    fs::create_dir_all(project_workflows.join("nested")).expect("create project workflows");
+    fs::create_dir_all(&child_workflows).expect("create child workflows");
+    fs::create_dir_all(&personal_workflows).expect("create personal workflows");
+    fs::write(project_workflows.join("shared.ts"), "return 'root';").expect("write root workflow");
+    fs::write(project_workflows.join("nested/a.js"), "return 'nested';")
+        .expect("write nested workflow");
+    fs::write(child_workflows.join("shared.ts"), "return 'child';").expect("write child workflow");
+    fs::write(personal_workflows.join("personal.ts"), "return 'personal';")
+        .expect("write personal workflow");
+
+    assert_eq!(
+        discover_saved_workflows(&cwd, personal.path()),
+        vec![
+            SavedWorkflow {
+                name: "nested/a".to_string(),
+                path: project_workflows.join("nested/a.js"),
+            },
+            SavedWorkflow {
+                name: "personal".to_string(),
+                path: personal_workflows.join("personal.ts"),
+            },
+            SavedWorkflow {
+                name: "shared".to_string(),
+                path: child_workflows.join("shared.ts"),
+            },
+        ]
+    );
 }
 
 #[tokio::test]

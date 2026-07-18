@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -19,7 +20,7 @@ impl ChatWidget {
             .current_cwd
             .as_deref()
             .unwrap_or(self.config.cwd.as_path());
-        let workflows = discover_saved_workflows(cwd);
+        let workflows = discover_saved_workflows(cwd, &self.config.codex_home);
         let mut items = vec![SelectionItem {
             name: "Managed runs".to_string(),
             description: Some("View active, completed, and terminated workflow runs".to_string()),
@@ -103,12 +104,12 @@ impl ChatWidget {
             .current_cwd
             .as_deref()
             .unwrap_or(self.config.cwd.as_path());
-        let Some(workflow) = discover_saved_workflows(cwd)
+        let Some(workflow) = discover_saved_workflows(cwd, &self.config.codex_home)
             .into_iter()
             .find(|workflow| workflow.name == name)
         else {
             self.add_error_message(format!(
-                "Saved workflow `{name}` was not found under .codex/workflows."
+                "Saved workflow `{name}` was not found in project or personal workflow scopes."
             ));
             return;
         };
@@ -127,26 +128,66 @@ fn saved_workflow_prompt(path: &Path, args: Option<&str>) -> String {
     )
 }
 
-fn discover_saved_workflows(cwd: &Path) -> Vec<SavedWorkflow> {
+fn discover_saved_workflows(cwd: &Path, codex_home: &Path) -> Vec<SavedWorkflow> {
+    const MAX_SAVED_WORKFLOWS: usize = 100;
+
     let relative_root = Path::new(".codex").join("workflows");
-    let root = cwd.join(&relative_root);
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return Vec::new();
-    };
-    let mut workflows = entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let absolute_path = entry.path();
-            let extension = absolute_path.extension()?.to_str()?;
-            if !matches!(extension, "js" | "ts") || !entry.file_type().ok()?.is_file() {
-                return None;
-            }
-            let file_name = absolute_path.file_name()?;
-            let name = absolute_path.file_stem()?.to_str()?.to_string();
-            let path = relative_root.join(file_name);
-            (!name.is_empty()).then_some(SavedWorkflow { name, path })
-        })
+    let mut roots = cwd
+        .ancestors()
+        .map(|ancestor| ancestor.join(&relative_root))
         .collect::<Vec<_>>();
+    roots.push(codex_home.join("workflows"));
+
+    let current_root = cwd.join(&relative_root);
+    let mut names = HashSet::new();
+    let mut workflows = Vec::new();
+    for root in roots {
+        let mut pending = vec![root.clone()];
+        while let Some(directory) = pending.pop() {
+            let Ok(entries) = std::fs::read_dir(&directory) else {
+                continue;
+            };
+            for entry in entries.filter_map(Result::ok) {
+                if workflows.len() == MAX_SAVED_WORKFLOWS {
+                    break;
+                }
+                let absolute_path = entry.path();
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+                if file_type.is_dir() {
+                    pending.push(absolute_path);
+                    continue;
+                }
+                let Some(extension) = absolute_path.extension().and_then(|value| value.to_str())
+                else {
+                    continue;
+                };
+                if !file_type.is_file() || !matches!(extension, "js" | "ts") {
+                    continue;
+                }
+                let Ok(relative_path) = absolute_path.strip_prefix(&root) else {
+                    continue;
+                };
+                let name = relative_path
+                    .with_extension("")
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                if name.is_empty() || !names.insert(name.clone()) {
+                    continue;
+                }
+                let path = if root == current_root {
+                    relative_root.join(relative_path)
+                } else {
+                    absolute_path
+                };
+                workflows.push(SavedWorkflow { name, path });
+            }
+        }
+        if workflows.len() == MAX_SAVED_WORKFLOWS {
+            break;
+        }
+    }
     workflows.sort_by(|left, right| left.name.cmp(&right.name));
     workflows
 }

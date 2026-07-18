@@ -64,6 +64,7 @@ pub(crate) struct CodeCellExecution {
     pub(crate) output: FunctionToolOutput,
     pub(crate) cell_id: CellId,
     pub(crate) status: CodeCellStatus,
+    pub(crate) response: RuntimeResponse,
 }
 
 pub(crate) async fn execute_code_cell(
@@ -133,7 +134,7 @@ pub(crate) async fn execute_code_cell_with_info(
     session.services.elicitations.wait_until_clear().await;
     let output = handle_runtime_response(
         &ExecContext { session, turn },
-        response,
+        response.clone(),
         max_output_tokens,
         started_at,
     )
@@ -142,6 +143,7 @@ pub(crate) async fn execute_code_cell_with_info(
         output,
         cell_id,
         status,
+        response,
     })
 }
 
@@ -377,7 +379,7 @@ fn truncate_code_mode_result(
 }
 
 async fn call_nested_tool(
-    _exec: ExecContext,
+    exec: ExecContext,
     tool_runtime: ToolCallRuntime,
     invocation: CodeModeNestedToolCall,
     cancellation_token: CancellationToken,
@@ -395,13 +397,18 @@ async fn call_nested_tool(
         )));
     }
 
+    let observed_target = input
+        .as_ref()
+        .and_then(|input| input.get("target"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
     let payload = match build_nested_tool_payload(tool_kind, &tool_name, input) {
         Ok(payload) => payload,
         Err(error) => return Err(FunctionCallError::RespondToModel(error)),
     };
 
     let call = ToolCall {
-        tool_name,
+        tool_name: tool_name.clone(),
         call_id: format!("{PUBLIC_TOOL_NAME}-{}", uuid::Uuid::new_v4()),
         payload,
     };
@@ -415,7 +422,88 @@ async fn call_nested_tool(
             cancellation_token,
         )
         .await?;
-    Ok(result.code_mode_result())
+    let result = result.code_mode_result();
+    observe_workflow_agent_call(
+        &exec,
+        &cell_id,
+        &tool_name,
+        observed_target.as_deref(),
+        &result,
+    )
+    .await;
+    Ok(result)
+}
+
+async fn observe_workflow_agent_call(
+    exec: &ExecContext,
+    cell_id: &CellId,
+    tool_name: &ToolName,
+    target: Option<&str>,
+    result: &serde_json::Value,
+) {
+    use crate::tools::workflow::WorkflowAgentVersion;
+    use crate::tools::workflow::WorkflowOwnedAgent;
+
+    match tool_name.name.as_str() {
+        "spawn_agent" => {
+            let (target, version) = if tool_name.namespace.as_deref() == Some("multi_agent_v1") {
+                (
+                    result.get("agent_id").and_then(serde_json::Value::as_str),
+                    WorkflowAgentVersion::V1,
+                )
+            } else {
+                (
+                    result.get("task_name").and_then(serde_json::Value::as_str),
+                    WorkflowAgentVersion::V2,
+                )
+            };
+            let Some(target) = target else {
+                return;
+            };
+            let thread_id = if matches!(version, WorkflowAgentVersion::V1) {
+                codex_protocol::ThreadId::from_string(target).ok()
+            } else {
+                crate::agent::agent_resolver::resolve_agent_target(
+                    &exec.session,
+                    &exec.turn,
+                    target,
+                )
+                .await
+                .ok()
+            };
+            if let Some(thread_id) = thread_id {
+                exec.session
+                    .services
+                    .workflow_service
+                    .track_agent(cell_id.clone(), WorkflowOwnedAgent { thread_id, version })
+                    .await;
+            }
+        }
+        "close_agent" | "interrupt_agent" => {
+            let Some(target) = target else {
+                return;
+            };
+            let thread_id = if let Ok(thread_id) = codex_protocol::ThreadId::from_string(target) {
+                Some(thread_id)
+            } else {
+                crate::agent::agent_resolver::resolve_agent_target(
+                    &exec.session,
+                    &exec.turn,
+                    target,
+                )
+                .await
+                .ok()
+            };
+            if let Some(thread_id) = thread_id {
+                exec.session
+                    .services
+                    .workflow_service
+                    .untrack_agent(cell_id, thread_id)
+                    .await;
+            }
+        }
+        _ => {}
+    }
 }
 
 fn build_nested_tool_payload(

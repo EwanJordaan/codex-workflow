@@ -67,7 +67,7 @@ return { received: args };
         &server,
         |request: &wiremock::Request| {
             body_contains(request, "workflow-list")
-                && body_contains(request, "workflow-1")
+                && body_contains(request, "workflow-")
                 && body_contains(request, "completed")
         },
         sse(vec![
@@ -179,7 +179,7 @@ return {{ finding }};
                 "wait_workflow",
                 &serde_json::to_string(&json!({
                     "cell_id": "1",
-                    "yield_time_ms": 60_000,
+                    "yield_time_ms": 30_000,
                 }))
                 .expect("wait arguments should serialize"),
             ),

@@ -20,14 +20,14 @@ pub(super) fn create_run_workflow_tool() -> ToolSpec {
         (
             "path".to_string(),
             JsonSchema::string(Some(
-                "Project-relative .ts or .js file below .codex/workflows/. Mutually exclusive with source."
+                "A .ts or .js file in the current or an ancestor project's .codex/workflows directory, or the personal workflows directory. Mutually exclusive with source."
                     .to_string(),
             )),
         ),
         (
             "source".to_string(),
             JsonSchema::string(Some(
-                "Ephemeral JavaScript-compatible workflow source. Mutually exclusive with path."
+                "Ephemeral JavaScript-compatible workflow source, limited to 4096 bytes. Mutually exclusive with path."
                     .to_string(),
             )),
         ),
@@ -58,10 +58,14 @@ pub(super) fn create_run_workflow_tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: RUN_WORKFLOW_TOOL_NAME.to_string(),
         description: concat!(
-            "Launch a reusable multi-agent workflow from either a JavaScript-compatible ",
+            "Launch a bounded multi-agent workflow from either a JavaScript-compatible ",
             "TypeScript file under `.codex/workflows/` or ephemeral source. Provide exactly ",
-            "one of `path` or `source`. If this call yields a cell ID, call ",
-            "`wait_workflow` until the run completes."
+            "one of `path` or `source`. Source starts with `export const meta = { name, ",
+            "description };`. The workflow receives `args` and can use `agent(prompt, ",
+            "options?)`, `parallel(tasks, { concurrency })`, `pipeline(items, worker, ",
+            "{ concurrency })`, and `phase(name, work)`. Keep filesystem, shell, and network ",
+            "work inside agents. Concurrency is capped at 4 and each workflow at 64 agents. ",
+            "If this call yields a cell ID, call `wait_workflow` until the run completes."
         )
         .to_string(),
         strict: false,
@@ -72,12 +76,19 @@ pub(super) fn create_run_workflow_tool() -> ToolSpec {
 }
 
 pub(super) fn create_list_workflows_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "limit".to_string(),
+        JsonSchema::number(Some(
+            "Maximum number of newest runs to return, from 1 through 50. Defaults to 20."
+                .to_string(),
+        )),
+    )]);
     ToolSpec::Function(ResponsesApiTool {
         name: LIST_WORKFLOWS_TOOL_NAME.to_string(),
         description: "List managed workflow runs in this session and their lifecycle status."
             .to_string(),
         strict: false,
-        parameters: JsonSchema::object(BTreeMap::new(), Some(Vec::new()), Some(false.into())),
+        parameters: JsonSchema::object(properties, None, Some(false.into())),
         output_schema: None,
         defer_loading: None,
     })

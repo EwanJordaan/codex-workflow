@@ -21,46 +21,6 @@ const LOCAL_FRIENDLY_TEMPLATE: &str =
 const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are a deeply pragmatic, effective software engineer.";
 const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
 const PERSONALITY_SECTION_HEADER: &str = "# Personality";
-const WORKFLOW_INSTRUCTIONS: &str = r#"
-
-# Workflows
-
-Use a workflow for repeatable multi-agent work: bounded fan-out, branching, loops, or independent verification. Use ordinary subagent calls for one or two simple delegations.
-
-For a one-off workflow, pass JavaScript-compatible source directly to `run_workflow`. Save repeatable workflows in `.codex/workflows/<name>.ts` or `.js`; users can discover and run them with `/workflows`. Begin each workflow with metadata, then use the workflow helpers at top level:
-
-```ts
-export const meta = {
-  name: "review-files",
-  description: "Review files and consolidate the findings",
-};
-
-const files = Array.isArray(args) ? args : [];
-const reviews = await phase("review", () =>
-  pipeline(
-    files,
-    (file) => agent(`Review ${file} for correctness bugs.`, { label: file }),
-    { concurrency: 4 },
-  ),
-);
-
-return agent(`Rank these findings:\n${JSON.stringify(reviews)}`, {
-  label: "synthesize",
-});
-```
-
-`args` is the structured JSON input passed to `run_workflow`. `agent(prompt, options?)` runs a subagent. `parallel(tasks, { concurrency })` runs zero-argument async callbacks with bounded concurrency. `pipeline(items, worker, { concurrency })` maps work with bounded concurrency while preserving input order. `phase(name, work)` marks a named stage.
-
-Keep orchestration in the workflow; have agents perform filesystem access, shell commands, web access, and edits. Bound every loop. Pipeline concurrency must be an integer from 1 through 4, and a workflow may spawn at most 64 agents.
-
-Launch a workflow with `run_workflow`, passing exactly one of `source` for an ephemeral workflow or a workspace-relative `.ts` or `.js` `path` beneath `.codex/workflows/`, plus optional structured `args`. Workflow source must be at most 128 KiB and cannot use imports, direct filesystem, shell, network, or mid-run user input.
-
-If `run_workflow` yields a cell ID, call `wait_workflow` until it completes; do not busy-poll. `wait_workflow` can terminate a cell, but this does not guarantee cancellation of subagents already started. Inspect live agents afterward.
-
-Workflow launches are registered as managed runs. Use `list_workflows` to inspect their run IDs and lifecycle status, and `control_workflow` with action `terminate` to stop a running workflow. When the user invokes `/workflows` to inspect runs, prefer these managed tools over guessing from conversation history.
-
-Treat workflow files as code: review them before launching because their agents inherit the current session's capabilities and can edit the workspace.
-"#;
 
 pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
     if let Some(context_window) = config.model_context_window {
@@ -106,13 +66,6 @@ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig)
         }
         if !config.personality_enabled {
             clear_instruction_messages(&mut model);
-        }
-        if let Some(instructions_template) = model
-            .model_messages
-            .as_mut()
-            .and_then(|messages| messages.instructions_template.as_mut())
-        {
-            instructions_template.push_str(WORKFLOW_INSTRUCTIONS);
         }
     }
 

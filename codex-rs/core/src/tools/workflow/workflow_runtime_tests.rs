@@ -21,6 +21,7 @@ use serde_json::Value;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
+use codex_code_mode::WorkflowAgentApi;
 use codex_code_mode::compile_workflow_source;
 
 #[derive(Default)]
@@ -148,7 +149,16 @@ fn workflow_tool(name: &str) -> ToolDefinition {
 }
 
 async fn execute_workflow(source: &str, delegate: Arc<AgentDelegate>) -> RuntimeResponse {
-    let compiled = compile_workflow_source(source, None).expect("workflow should compile");
+    let compiled = compile_workflow_source(
+        source,
+        /*args*/ None,
+        &WorkflowAgentApi::V1 {
+            spawn_tool: "multi_agent_v1__spawn_agent".to_string(),
+            wait_tool: "multi_agent_v1__wait_agent".to_string(),
+            close_tool: "multi_agent_v1__close_agent".to_string(),
+        },
+    )
+    .expect("workflow should compile");
     InProcessCodeModeSession::with_delegate(delegate)
         .execute(ExecuteRequest {
             tool_call_id: "workflow-runtime-test".to_string(),
